@@ -1,68 +1,42 @@
-/* Colour and type tokens. Calm blues by day; a dim navy for night shifts
-   (follows the computer's dark mode). The chart reads these too. */
+/* Colour and type tokens: fresh sky blue and aqua with mint, lavender and peach accents.
+   Always light, so the page stays bright and calm at the bedside. The chart reads these too. */
 
 :root {
-  --bg: #eef5fb;
-  --bg-2: #dceafa;
-  --panel: #ffffff;
-  --panel-border: rgba(43, 123, 214, .10);
-  --line: #dce8f4;
-  --text: #1b3148;
-  --muted: #6a809a;
+  --bg: #f3f9ff;
+  --blob-sky: #d3ecff;
+  --blob-mint: #d4f6ec;
+  --blob-lilac: #e8e3ff;
+  --panel: rgba(255, 255, 255, .82);
+  --panel-border: rgba(255, 255, 255, .9);
+  --line: #e1edf8;
+  --text: #0f2a44;
+  --muted: #5b7590;
 
-  --accent: #2b7bd6;
-  --accent-2: #4aa3f0;
-  --accent-soft: #e6f0fc;
-  --accent-deep: #1f62b0;
+  --accent: #1e88e5;
+  --accent-2: #2cc5f0;
+  --accent-soft: #e5f4ff;
+  --accent-deep: #1567c0;
 
-  --target: #9fb3c8;
-  --head: #8c7ae6;
-  --warn: #c98a1e;
-  --warn-soft: #fff4df;
-  --alarm: #d14848;
-  --alarm-soft: #fdeded;
-  --alarm-text: #8f2a2a;
-  --ok: #2a9a7f;
-  --ok-soft: #e1f4ee;
-  --video-bg: #dfe9f3;
+  --mint: #12b39a;   --mint-soft: #e2f8f2;
+  --lilac: #7c6cf0;  --lilac-soft: #efecff;
+  --peach: #f08a4b;  --peach-soft: #fff1e7;
 
-  --shadow: 0 1px 2px rgba(27, 49, 72, .04), 0 8px 24px rgba(43, 123, 214, .08);
-  --shadow-hover: 0 2px 4px rgba(27, 49, 72, .05), 0 14px 34px rgba(43, 123, 214, .13);
-  --radius: 20px;
+  --target: #9bb1c7;
+  --head: #8b7cf6;
+  --warn: #e0921f;
+  --warn-soft: #fff4e0;
+  --alarm: #e5484d;
+  --alarm-soft: #ffeced;
+  --alarm-text: #9b2428;
+  --ok: #12b39a;
+  --ok-soft: #e2f8f2;
+  --video-bg: #e3eef8;
+
+  --shadow: 0 1px 2px rgba(15, 42, 68, .04), 0 10px 30px rgba(30, 136, 229, .09);
+  --shadow-hover: 0 2px 4px rgba(15, 42, 68, .05), 0 16px 40px rgba(30, 136, 229, .15);
+  --radius: 22px;
   --radius-sm: 14px;
   --font: "Nunito", ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont,
           "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1a2a;
-    --bg-2: #12294a;
-    --panel: #14253a;
-    --panel-border: rgba(120, 170, 230, .12);
-    --line: #23384f;
-    --text: #e3eefa;
-    --muted: #8fa6bf;
-
-    --accent: #4a9bf0;
-    --accent-2: #6db6ff;
-    --accent-soft: #1b3250;
-    --accent-deep: #3a87d8;
-
-    --target: #5f7690;
-    --head: #a596f0;
-    --warn: #e3ad4c;
-    --warn-soft: #33281a;
-    --alarm: #f07070;
-    --alarm-soft: #3a1e24;
-    --alarm-text: #ffc9c9;
-    --ok: #4cc3a2;
-    --ok-soft: #173a33;
-    --video-bg: #0b1624;
-
-    --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 24px rgba(0, 0, 0, .25);
-    --shadow-hover: 0 2px 4px rgba(0, 0, 0, .3), 0 14px 34px rgba(0, 0, 0, .35);
-    color-scheme: dark;
-  }
 }

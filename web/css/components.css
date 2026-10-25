@@ -8,7 +8,7 @@
   display: grid; place-items: center;
   overflow: hidden;
   background: linear-gradient(140deg, var(--accent-2), var(--accent));
-  box-shadow: 0 6px 18px rgba(43, 123, 214, .35);
+  box-shadow: 0 8px 20px rgba(30, 136, 229, .35);
 }
 .logo svg { animation: drip 3.2s ease-in-out infinite; }
 @keyframes drip {
@@ -69,6 +69,8 @@ header h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: .2px; 
   background: var(--panel);
   border: 1px solid var(--panel-border);
   box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   transition: box-shadow .25s ease;
 }
 .panel:hover { box-shadow: var(--shadow-hover); }
@@ -93,19 +95,22 @@ header h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: .2px; 
 .stat .l { font-size: 13px; font-weight: 600; color: var(--muted); }
 .stat .v { font-size: 30px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat .u { font-size: 13px; font-weight: 600; color: var(--muted); }
+.stat:nth-child(2) { background: var(--mint-soft); }   .stat:nth-child(2) .v { color: var(--mint); }
+.stat:nth-child(3) { background: var(--lilac-soft); }  .stat:nth-child(3) .v { color: var(--lilac); }
+.stat:nth-child(4) { background: var(--peach-soft); }  .stat:nth-child(4) .v { color: var(--peach); }
 /* the drip rate: a little body of water */
 .stat.hero {
   color: #fff;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'%3E%3Cpath d='M0 22 Q25 10 50 22 T100 22 T150 22 T200 22 V40 H0Z' fill='%23ffffff' fill-opacity='.16'/%3E%3C/svg%3E") bottom / 100% 48% no-repeat,
-    linear-gradient(140deg, var(--accent-2), var(--accent));
-  box-shadow: 0 8px 22px rgba(43, 123, 214, .28);
+    linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 10px 26px rgba(30, 136, 229, .32);
 }
 .stat.hero .l, .stat.hero .u { color: rgba(255, 255, 255, .88); }
 .stat.hero.tick { animation: ripple .7s ease-out; }       /* a drop was counted */
 @keyframes ripple {
-  0%   { box-shadow: 0 0 0 0 rgba(74, 163, 240, .55), 0 8px 22px rgba(43, 123, 214, .28); }
-  100% { box-shadow: 0 0 0 16px rgba(74, 163, 240, 0), 0 8px 22px rgba(43, 123, 214, .28); }
+  0%   { box-shadow: 0 0 0 0 rgba(44, 197, 240, .55), 0 8px 22px rgba(30, 136, 229, .28); }
+  100% { box-shadow: 0 0 0 16px rgba(44, 197, 240, 0), 0 8px 22px rgba(30, 136, 229, .28); }
 }
 
 /* ---- chart ---- */
@@ -214,7 +219,7 @@ button.primary {
   color: #fff;
   border-color: transparent;
   background: linear-gradient(140deg, var(--accent-2), var(--accent));
-  box-shadow: 0 4px 14px rgba(43, 123, 214, .25);
+  box-shadow: 0 4px 14px rgba(30, 136, 229, .25);
 }
 button.primary:hover { background: linear-gradient(140deg, var(--accent), var(--accent-deep)); }
 #ptt {
