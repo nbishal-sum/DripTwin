@@ -1,6 +1,6 @@
-# DripTwin 💧
+# DripTwin
 
-**Pump-like safety for gravity IV drips, using a webcam, a $4 microcontroller and a servo.**
+**Pump-like safety for gravity IV drips, using a webcam, a small microcontroller and a servo.**
 
 Gravity IV drips are used everywhere infusion pumps are too expensive or unavailable: field
 hospitals, rural clinics, disaster response, vet care. Today they're set by hand and checked by eye.
