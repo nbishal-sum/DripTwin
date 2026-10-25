@@ -43,7 +43,6 @@ Built at **Cal Hacks 13.0** (October 2026).
 - **Cartesia API key** (`CARTESIA_API_KEY`): the voice of DripTwin. With it, a nurse can run
   DripTwin completely hands-free: give commands (*"Assistant, start 120 mL per hour"*), ask
   questions (*"Assistant, how many drops so far?"*), and hear every answer spoken back.
-  Without it, questions can still be typed into the dashboard.
 - **Anthropic API key** (`ANTHROPIC_API_KEY`): the Claude assistant that understands the
   request and decides what to do. Without it, DripTwin gives short scripted status replies.
 - Optional: `DATABASE_URL` for Tiger Data / TimescaleDB logging (SQLite is used otherwise)
