@@ -1,0 +1,68 @@
+/* Colour and type tokens. Calm blues by day; a dim navy for night shifts
+   (follows the computer's dark mode). The chart reads these too. */
+
+:root {
+  --bg: #eef5fb;
+  --bg-2: #dceafa;
+  --panel: #ffffff;
+  --panel-border: rgba(43, 123, 214, .10);
+  --line: #dce8f4;
+  --text: #1b3148;
+  --muted: #6a809a;
+
+  --accent: #2b7bd6;
+  --accent-2: #4aa3f0;
+  --accent-soft: #e6f0fc;
+  --accent-deep: #1f62b0;
+
+  --target: #9fb3c8;
+  --head: #8c7ae6;
+  --warn: #c98a1e;
+  --warn-soft: #fff4df;
+  --alarm: #d14848;
+  --alarm-soft: #fdeded;
+  --alarm-text: #8f2a2a;
+  --ok: #2a9a7f;
+  --ok-soft: #e1f4ee;
+  --video-bg: #dfe9f3;
+
+  --shadow: 0 1px 2px rgba(27, 49, 72, .04), 0 8px 24px rgba(43, 123, 214, .08);
+  --shadow-hover: 0 2px 4px rgba(27, 49, 72, .05), 0 14px 34px rgba(43, 123, 214, .13);
+  --radius: 20px;
+  --radius-sm: 14px;
+  --font: "Nunito", ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1a2a;
+    --bg-2: #12294a;
+    --panel: #14253a;
+    --panel-border: rgba(120, 170, 230, .12);
+    --line: #23384f;
+    --text: #e3eefa;
+    --muted: #8fa6bf;
+
+    --accent: #4a9bf0;
+    --accent-2: #6db6ff;
+    --accent-soft: #1b3250;
+    --accent-deep: #3a87d8;
+
+    --target: #5f7690;
+    --head: #a596f0;
+    --warn: #e3ad4c;
+    --warn-soft: #33281a;
+    --alarm: #f07070;
+    --alarm-soft: #3a1e24;
+    --alarm-text: #ffc9c9;
+    --ok: #4cc3a2;
+    --ok-soft: #173a33;
+    --video-bg: #0b1624;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 8px 24px rgba(0, 0, 0, .25);
+    --shadow-hover: 0 2px 4px rgba(0, 0, 0, .3), 0 14px 34px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}

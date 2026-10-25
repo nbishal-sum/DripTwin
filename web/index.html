@@ -4,118 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DripTwin</title>
-<style>
-  :root {
-    --bg: #eef5fb; --panel: #ffffff; --line: #dce8f4; --text: #1d3349; --muted: #6b8199;
-    --accent: #2b7bd6; --accent-soft: #e4effc; --accent-deep: #1f62b0;
-    --target: #9fb3c8; --head: #8c7ae6; --warn: #c98a1e; --warn-soft: #fff4df;
-    --alarm: #d14848; --alarm-soft: #fdeded; --ok: #2a9a7f; --ok-soft: #e1f4ee;
-    --shadow: 0 1px 2px rgba(29, 51, 73, .04), 0 6px 20px rgba(43, 123, 214, .07);
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; color: var(--text);
-         background: linear-gradient(180deg, #e3effa 0, var(--bg) 320px) no-repeat, var(--bg);
-         font: 15px/1.5 ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; flex-wrap: wrap;
-           max-width: 1400px; margin: 0 auto; }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--accent);
-          display: grid; place-items: center; box-shadow: var(--shadow); }
-  header h1 { font-size: 20px; margin: 0; font-weight: 700; }
-  .sub { font-size: 13px; color: var(--muted); }
-  .pill { margin-left: auto; padding: 7px 16px; border-radius: 99px; font-size: 14px; font-weight: 600;
-          background: var(--panel); color: var(--muted); box-shadow: var(--shadow);
-          display: inline-flex; align-items: center; gap: 8px; }
-  .pill::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .8; }
-  .pill.running { background: var(--ok-soft); color: var(--ok); }
-  .pill.running::before { animation: breathe 2.4s ease-in-out infinite; }
-  .pill.warn { background: var(--warn-soft); color: var(--warn); }
-  .pill.alarm { background: var(--alarm-soft); color: var(--alarm); }
-  .pill.alarm::before { animation: breathe 1s ease-in-out infinite; }
-  @keyframes breathe { 50% { opacity: .25; } }
-  #banner { display: none; max-width: 1352px; margin: 0 auto 4px; padding: 14px 18px; border-radius: 14px;
-            background: var(--alarm-soft); color: #8f2a2a; font-weight: 600;
-            border-left: 5px solid var(--alarm); box-shadow: var(--shadow); }
-  @media (max-width: 1400px) { #banner { margin: 0 24px 4px; } }
-  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 20px;
-         padding: 12px 24px 24px; max-width: 1400px; margin: 0 auto; }
-  @media (max-width: 900px) {
-    main { grid-template-columns: 1fr; padding: 12px 16px; }
-    header { padding: 14px 16px; }
-    #banner { margin: 0 16px 4px; }
-  }
-  .panel { background: var(--panel); border-radius: 18px; padding: 18px 20px; min-width: 0;
-           box-shadow: var(--shadow); }
-  .panel h2 { font-size: 15px; color: var(--text); margin: 0 0 12px; font-weight: 650; }
-  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .stat { background: var(--accent-soft); border-radius: 14px; padding: 12px 14px; }
-  .stat:first-child { background: var(--accent); color: #fff; }
-  .stat:first-child .l, .stat:first-child .u { color: rgba(255, 255, 255, .85); }
-  .stat .v { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
-  .stat .u { font-size: 13px; color: var(--muted); font-weight: 500; }
-  .stat .l { font-size: 13px; color: var(--muted); font-weight: 500; }
-  canvas { width: 100%; height: 240px; display: block; }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 8px; }
-  .legend i { display: inline-block; width: 14px; height: 4px; vertical-align: middle;
-              margin-right: 6px; border-radius: 2px; }
-  .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-  .twin { display: grid; grid-template-columns: 90px 1fr; gap: 14px; align-items: center; }
-  .gauge { position: relative; height: 160px; border-left: 2px solid var(--line); margin-left: 30px; }
-  .gauge .mark { position: absolute; left: -6px; width: 60px; height: 2px; }
-  .gauge .mark span { position: absolute; left: 64px; top: -9px; font-size: 12px; white-space: nowrap; }
-  .gauge .bag { position: absolute; left: 8px; width: 26px; height: 34px; border-radius: 6px 6px 12px 12px;
-                background: var(--head); opacity: .8; transition: bottom .6s; }
-  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
-  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
-  #video { width: 100%; border-radius: 12px; background: #dfe9f3; min-height: 140px; display: block; }
-  #events { max-height: 280px; overflow-y: auto; font-size: 14px; }
-  .ev { padding: 10px 0 10px 18px; border-bottom: 1px solid var(--line); position: relative; }
-  .ev:last-child { border-bottom: 0; }
-  .ev::before { content: ""; position: absolute; left: 2px; top: 17px; width: 8px; height: 8px;
-                border-radius: 50%; background: var(--accent); }
-  .ev.warn::before { background: var(--warn); } .ev.alarm::before { background: var(--alarm); }
-  .ev .k { font-size: 13px; font-weight: 650; }
-  .ev.warn .k { color: var(--warn); } .ev.alarm .k { color: var(--alarm); }
-  .ev time { float: right; color: var(--muted); font-size: 12px; }
-  .empty { color: var(--muted); font-size: 14px; margin: 0; }
-  #chat { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-  #chat:empty { display: none; }
-  .msg { padding: 9px 13px; border-radius: 16px; max-width: 90%; }
-  .msg.you { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 5px; }
-  .msg.bot { align-self: flex-start; background: var(--accent-soft); border-bottom-left-radius: 5px; }
-  .row { display: flex; gap: 8px; }
-  input, button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
-                  border-radius: 12px; padding: 10px 12px; }
-  input { flex: 1; min-width: 0; }
-  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  button { cursor: pointer; font-weight: 600; transition: background .15s, border-color .15s; }
-  button:hover { border-color: var(--accent); background: var(--accent-soft); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.primary:hover { background: var(--accent-deep); }
-  #ptt { width: 100%; padding: 15px; font-size: 16px; margin-bottom: 4px; border-radius: 14px;
-         display: flex; align-items: center; justify-content: center; gap: 10px; }
-  #ptt.rec { background: var(--alarm); border-color: var(--alarm); }
-  .hint { text-align: center; color: var(--muted); font-size: 12px; margin: 0 0 10px; }
-  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
-  .muted { color: var(--muted); font-size: 13px; }
-  form.order { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  form.order label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
-  form.order button { grid-column: span 2; }
-  label.check { display: flex; gap: 10px; align-items: center; padding: 6px 0; cursor: pointer; font-size: 14px; }
-  label.check input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
-  #hfState { display: flex; align-items: center; gap: 10px; min-height: 22px; margin: 2px 0 10px; }
-  #hfText { white-space: pre-line; }
-  .meter { flex: none; width: 54px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  .meter i { display: block; height: 100%; width: 0; background: var(--ok); border-radius: 3px; transition: width .08s; }
-  footer { max-width: 1400px; margin: 0 auto; padding: 0 24px 24px; color: var(--muted); font-size: 12px; text-align: center; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/components.css">
 </head>
 <body>
 <header>
   <div class="brand">
     <div class="logo" aria-hidden="true">
-      <svg width="20" height="24" viewBox="0 0 20 24"><path d="M10 1C10 1 2 10.5 2 15.5a8 8 0 0 0 16 0C18 10.5 10 1 10 1z" fill="#fff"/></svg>
+      <svg width="18" height="22" viewBox="0 0 20 24"><path d="M10 1C10 1 2 10.5 2 15.5a8 8 0 0 0 16 0C18 10.5 10 1 10 1z" fill="#fff"/></svg>
     </div>
     <div><h1>DripTwin</h1><div class="sub">IV drip monitor</div></div>
   </div>
@@ -126,7 +26,7 @@
   <div class="col">
     <section class="panel">
       <div class="stats">
-        <div class="stat"><div class="l">Drip rate</div><div class="v" id="rate">–<span class="u"> drops/min</span></div></div>
+        <div class="stat hero" id="heroStat"><div class="l">Drip rate</div><div class="v" id="rate">–<span class="u"> drops/min</span></div></div>
         <div class="stat"><div class="l" id="lTarget">Target</div><div class="v" id="target">–<span class="u"> drops/min</span></div></div>
         <div class="stat"><div class="l" id="lMlh">Flow</div><div class="v" id="mlh">–<span class="u"> mL/hour</span></div></div>
         <div class="stat"><div class="l" id="lValve">Clamp open</div><div class="v" id="valve">–<span class="u"> %</span></div></div>
@@ -186,7 +86,7 @@
     </section>
     <section class="panel">
       <h2>Drip chamber</h2>
-      <img id="video" alt="Live view of the drip chamber">
+      <div class="video-wrap"><img id="video" alt="Live view of the drip chamber"><span class="live">LIVE</span></div>
       <p class="muted" id="feedNote" style="display:none;color:var(--warn)">Camera picture paused. Reconnecting…</p>
       <p class="muted" id="camNote">The box flashes green each time a drop is counted.</p>
     </section>
@@ -271,7 +171,18 @@ function setupMonitor() {
 
 let actx = null;
 
+// Ripple the drip-rate card each time a new drop is counted.
+let lastCount = null;
+function pulseOnDrop(n) {
+  if (lastCount != null && n > lastCount) {
+    const el = $("heroStat");
+    el.classList.remove("tick"); void el.offsetWidth; el.classList.add("tick");
+  }
+  lastCount = n;
+}
+
 function renderMonitor(s) {
+  pulseOnDrop(s.drops_counted);
   const d = s.device || {}, set = (id, v, u) => $(id).innerHTML = `${v}<span class="u"> ${u}</span>`;
   const age = s.last_drop_age_s, live = age != null && age < 10;
   $("mode").className = "pill " + (d.camera_error ? "alarm" : live ? "running" : "");
@@ -291,6 +202,7 @@ function renderMonitor(s) {
 
 function render(s) {
   if (s.monitor_only) return renderMonitor(s);
+  pulseOnDrop(s.drops_counted);
   const mode = s.mode;
   const cls = mode.startsWith("alarm_low") ? "warn" : mode.startsWith("alarm") ? "alarm"
             : mode === "running" ? "running" : mode === "probing" ? "warn" : "";

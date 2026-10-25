@@ -17,6 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import voice
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=WEB), name="static")     # dashboard CSS
 
 
 @app.get("/")
