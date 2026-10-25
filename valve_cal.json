@@ -7,7 +7,7 @@
  "closed_deg": 68,
  "backlash_deg": 1.5,
  "settle_s": 8.0,
- "rate_window": 8,
+ "rate_window": 16,
  "rows": [
   {
    "angle": 40.0,
@@ -100,5 +100,8 @@
    "secs": 0,
    "ml_h": 0.0
   }
- ]
+ ],
+ "stall_s": 25.0,
+ "head_alert_cm": 30.0,
+ "step_deg": 0.5
 }

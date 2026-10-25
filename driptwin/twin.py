@@ -265,7 +265,8 @@ class DripTwin:
             s.head_baseline_cm = s.head_inst_cm
             return
         delta = s.head_inst_cm - s.head_baseline_cm
-        if abs(delta) > 10.0 and not self._recent("head_change", t, 20):
+        v = self.cfg.physics.valve
+        if abs(delta) > (v.head_alert_cm if v else 10.0) and not self._recent("head_change", t, 20):
             direction = "lowered" if delta < 0 else "raised"
             self._emit(t, "head_change", "warn",
                        f"Flow changed with no valve change. The twin's implied head moved "
@@ -277,7 +278,8 @@ class DripTwin:
 
     def _check_stopped(self, t: float, o: Order) -> bool:
         expected_interval = 60.0 / o.target_gtt_min
-        stall = max(4 * expected_interval, 8.0)
+        v = self.cfg.physics.valve
+        stall = max(4 * expected_interval, 8.0, v.stall_s if v else 0.0)
         age = self.rate.last_drop_age_s
         if t - self.t_started < stall + 4:
             return False
@@ -287,7 +289,9 @@ class DripTwin:
             if self._probe:
                 self._emit(t, "probe_cleared", "info",
                            "Drops resumed during the flow check; no alarm.")
+                u0 = self._probe["u0"]
                 self.mode, self._probe = Mode.RUNNING, None
+                self._move(u0, t)          # back to where control had it: no ratcheting open
             return False
 
         remaining = self.est.state.remaining_ml

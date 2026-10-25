@@ -44,10 +44,16 @@ class ValveTable:
     # Drops through this valve come irregularly: rate = mean interval over this
     # many drops (0 = the usual median estimate).
     rate_window: int = 0
+    # A gap this long (s) counts as "drops stopped"; irregular drips pause on their own.
+    stall_s: float = 0.0
+    # Implied-head jump (cm) reported as "bag moved"; noisy drips need more.
+    head_alert_cm: float = 10.0
+
+    step_deg: float = 1.0                # largest correction, degrees
 
     @property
     def max_step_u(self) -> float:
-        return 1.0 / abs(self.closed_deg - self.open_deg)     # 1 degree per correction
+        return self.step_deg / abs(self.closed_deg - self.open_deg)
 
 
 @dataclass(frozen=True)

@@ -225,5 +225,7 @@ def load_valve(path, base: PhysicsParams = CONFIG.physics) -> PhysicsParams:
     head = cal.get("head_cm") or CONFIG.default_head_cm
     backlash = cal.get("backlash_deg", 0.0) / abs(closed_deg - open_deg)
     valve = ValveTable(tuple(us), tuple(qs), head, open_deg, closed_deg, backlash,
-                       settle_s=cal.get("settle_s", 1.0), rate_window=cal.get("rate_window", 0))
+                       settle_s=cal.get("settle_s", 1.0), rate_window=cal.get("rate_window", 0),
+                       stall_s=cal.get("stall_s", 0.0), head_alert_cm=cal.get("head_alert_cm", 10.0),
+                       step_deg=cal.get("step_deg", 1.0))
     return replace(base, valve=valve, r0=(head - base.p_venous_cmh2o) / qs[0])
