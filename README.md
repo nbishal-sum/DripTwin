@@ -3,19 +3,19 @@
 **Pump-like safety for gravity IV drips, using a webcam, a small microcontroller and a servo.**
 
 Gravity IV drips are used everywhere infusion pumps are too expensive or unavailable: field
-hospitals, rural clinics, disaster response, vet care. Today they're set by hand and checked by eye.
+hospitals, rural clinics, disaster response and veterinary care. Today they're set by hand and checked by eye.
 DripTwin watches the drip chamber, counts every drop, works out *why* the flow changed, corrects
-it, and answers the nurse by voice.
+the flow, and answers the nurse by voice.
 
 Built at **Cal Hacks 13.0** (October 2026).
 
 ## What it does
 
 - **Counts drops with a webcam.** OpenCV detects each drop splashing into the chamber.
-  On a hand-counted 2-minute recording it caught **25 of 25 drops with no false counts**.
+  On a hand-counted 2-minute recording, it caught **25 of 25 drops with no false counts**.
 - **Explains changes with a physics "digital twin".** A model of the IV line works backwards
-  from the drop rate to estimate the bag height. It can tell *the bag was lowered 25 cm* apart from
-  *the line is kinked* or *the bag is empty*.
+  from the drop rate to estimate the bag height. It can tell a lowered bag apart from a kinked line
+  or an empty bag.
 - **Corrects the flow.** A servo pinch valve adjusts the tubing to hold the ordered rate.
 - **Talks to the nurse.** Say *"Assistant, how many drops so far?"* and it answers out loud.
   Orders are read back and need a spoken confirmation before anything starts.
@@ -64,7 +64,7 @@ webcam → drop detector → drip rate → digital twin → pinch valve (via Pic
 | Vision | `driptwin/vision.py` | Frame-to-frame change in a box over the splash zone, with a self-tuning threshold |
 | Rate | `driptwin/rate.py` | Median time between drops, so one missed drop barely matters |
 | Twin | `driptwin/physics.py` | `flow = (bag height − vein pressure) / (tubing + valve resistance)`, solved backwards for bag height |
-| Control | `driptwin/twin.py` | Sets the valve from the model. A step in bag height means the bag moved. No drops → open the valve briefly to tell a kink from an empty bag |
+| Control | `driptwin/twin.py` | Sets the valve from the model. A sudden change in bag height means the bag moved. If drops stop, it opens the valve briefly to tell a kink from an empty bag |
 | Safety | `firmware/main.py` | Starts closed, limits valve travel and speed, holds position if the laptop goes quiet, hardware watchdog |
 | Agent | `driptwin/agent.py` | Claude with narrow tools, order read-back and confirmation, no valve tool |
 
