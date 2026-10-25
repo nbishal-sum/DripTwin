@@ -26,7 +26,7 @@ MAX_SLEW_PER_S = 0.15
 HB_TIMEOUT_MS = 3000
 # servo calibration (python -m driptwin.valvecal): angle at u=0 (open) and
 # u=1 (pinched shut). Must match open_deg/closed_deg in valve_cal.json.
-OPEN_DEG, CLOSED_DEG = 40.0, 68.0
+OPEN_DEG, CLOSED_DEG = 40.0, 90.0
 ANGLE_MIN, ANGLE_MAX = 0.0, 90.0     # mechanical range of the valve, never exceeded
 
 servo = PWM(Pin(15)); servo.freq(50)

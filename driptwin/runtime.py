@@ -15,6 +15,7 @@ import asyncio
 import json
 import threading
 import time
+from pathlib import Path
 
 import cv2
 
@@ -74,11 +75,39 @@ class SimDevice:
         return action
 
 
+FIRMWARE = Path(__file__).resolve().parent.parent / "firmware" / "main.py"
+
+
+def load_firmware(ser) -> None:
+    """Paste firmware/main.py into the Pico's RAM through the raw REPL and run it.
+    Nothing is saved, so the Pico must be at a blank REPL (no main.py); a reboot
+    (its watchdog, after Ctrl-C) brings it back to that REPL."""
+    ser.write(b"\r\x03\x03")
+    time.sleep(0.2)
+    ser.write(b"\x01")
+    time.sleep(0.3)
+    ser.reset_input_buffer()
+    code = FIRMWARE.read_bytes()
+    for i in range(0, len(code), 256):
+        ser.write(code[i:i + 256])
+        time.sleep(0.01)
+    ser.write(b"\x04")
+    time.sleep(0.5)
+    if b"OK" not in ser.read(200):
+        raise RuntimeError("Pico did not take the firmware: is it at a blank REPL (no main.py)?")
+
+
 class PicoDevice:
     def __init__(self, on_drop, port: str, camera: int | str | None = 0):
         import serial
         self.on_drop = on_drop
-        self.ser = serial.Serial(port, 115200, timeout=0.1)
+        try:
+            self.ser = serial.Serial(port, 115200, timeout=0.1)
+        except serial.SerialException as e:
+            raise SystemExit(f"Can't open the Pico on {port}: another program is using it "
+                             f"(flowctl, valvecal, servo.py, mpremote, Thonny?). Close it and "
+                             f"start again.\n  ({e})") from None
+        load_firmware(self.ser)
         self.status: dict = {}
         self.alarms: list[dict] = []
         self.camera = CameraCounter(on_drop, camera) if camera is not None else None
@@ -104,6 +133,15 @@ class PicoDevice:
 
     def disturb(self, action: str) -> str:
         return "real hardware: do it by hand"
+
+    def close(self) -> None:
+        """Leave the line as found: open the valve, then stop the firmware."""
+        for _ in range(6):
+            self.command(0.0)
+            self.heartbeat()
+            time.sleep(0.5)
+        self.ser.write(b"\x03")
+        self.ser.close()
 
     def _reader(self) -> None:
         while True:

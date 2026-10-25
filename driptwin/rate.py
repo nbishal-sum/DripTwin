@@ -55,7 +55,9 @@ class RateEstimator:
             on_time = age <= max(3.0 * avg, 10.0)       # pauses are normal here
             effective = avg if on_time else age
             rate = 60.0 / effective if effective > 0 else 0.0
-            confident = times is fresh and len(intervals) >= self.window and on_time
+            # a full window, or a minute of drops when the flow is slow
+            enough = len(intervals) >= self.window or (len(intervals) >= 6 and times[-1] - times[0] >= 60)
+            confident = times is fresh and enough and on_time
             return RateEstimate(rate, confident, age, len(intervals))
         med = statistics.median(intervals)
         # Normal jitter: trust the interval median. A gap clearly longer than

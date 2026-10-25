@@ -126,6 +126,22 @@ WHERE infusion_id = (SELECT infusion_id FROM telemetry ORDER BY time DESC LIMIT 
 GROUP BY minute ORDER BY minute;
 ```
 
+### Holding a flow on the rig
+
+```bash
+.venv/bin/python -m driptwin.flowctl 95          # hold 95 mL/h; type a new rate + Enter to change it, Ctrl+C to stop
+.venv/bin/python -m driptwin.flowctl 95 --camera 1   # count drops with the webcam instead of a running monitor server
+```
+
+It loads `firmware/main.py` into the Pico's RAM (the Pico must be at a blank REPL), starts with the
+valve shut, opens fully to free the tube, then closes in on the right angle: it keeps the last
+too-fast and too-slow angles and tries halfway between them. On exit it opens the valve.
+
+Known limit of our current pinch valve: near its cut-off the flow drops from about 40 to about
+7 drops/min within about 0.1°, finer than an SG90 can position, so steady rates in between can't be
+held. A valve whose flow changes over several degrees (longer lever, cam, wider or softer pinch)
+fixes this; the controller needs no change.
+
 ### Valve calibration
 
 The pinch valve's response depends on the print and the tubing, so measure it once per build.
@@ -143,6 +159,20 @@ in `firmware/main.py` to the same angles before copying the firmware to the Pico
 
 The controller waits for fresh drops after every move, then steps toward the angle the table gives
 for the target flow. It holds once within ±5 % of the target and starts correcting again only past ±8 %.
+
+Optional keys in `valve_cal.json` describe how the rig behaves (values from our bench rig):
+
+| Key | Ours | Meaning |
+|---|---|---|
+| `open_deg` / `closed_deg` | 40 / 68 | Valve travel. 40° frees a squashed tube, 68° shuts it |
+| `backlash_deg` | 1.5 | Opening moves go this far past the target, then close onto it (the tube sticks) |
+| `settle_s` | 8 | Wait after a move before trusting drops (the drip chamber buffers changes) |
+| `rate_window` | 16 | Rate = mean interval over this many drops; for drips that come in bursts near the pinch |
+| `step_deg` | 0.5 | Largest correction per step |
+| `stall_s` | 25 | Gap that counts as "drops stopped" |
+| `head_alert_cm` | 30 | Implied bag-height jump reported as "bag moved" |
+
+`--min-interval 0.8` on `valvecal` ignores a second count within 0.8 s (a splash's ripple).
 
 ## How it works
 

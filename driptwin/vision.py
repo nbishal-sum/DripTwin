@@ -100,7 +100,7 @@ class SpikeDetector:
     """
 
     def __init__(self, k: float = 6.0, history: int = 150, refractory_s: float = 0.3,
-                 floor: float = 1.5, ratio: float = 3.5, warmup: int = 90, forget_s: float = 8.0):
+                 floor: float = 1.5, ratio: float = 2.0, warmup: int = 90, forget_s: float = 8.0):
         self.k, self.refractory_s, self.floor, self.ratio = k, refractory_s, floor, ratio
         self.warmup, self.forget_s = warmup, forget_s
         self.hist: deque[float] = deque(maxlen=history)
@@ -116,9 +116,14 @@ class SpikeDetector:
         if self.spikes and t - self.last_fire > self.forget_s:
             self.spikes.clear()                # long gap: relearn the drop size
         h = np.fromiter(self.hist, float)
-        med = float(np.median(h))
-        mad = float(np.median(np.abs(h - med))) * 1.4826
-        self.threshold = max(med + max(self.k * mad, self.floor), self.ratio * med,
+        # Noise level from the quietest frames only. At fast drips splash frames are
+        # a big share of all frames; once one slipped into the history it lifted the
+        # median and spread, the threshold rose over the next spike, that spike was
+        # learned as noise too, and counting stopped for good.
+        p5, p30 = np.percentile(h, (5, 30))
+        sigma = (p30 - p5) / 1.12                     # gaussian: p30 - p5 = 1.12 sigma
+        base = p30 + 0.52 * sigma                     # ~ the noise median
+        self.threshold = max(base + max(self.k * sigma, self.floor), self.ratio * base,
                              0.4 * max(self.spikes, default=0.0))
         fire = False
         if x > self.threshold:
@@ -145,6 +150,7 @@ class DropDetector:
         self._seen: list[np.ndarray] = []              # small diffs while locating
         self.det_splash = SpikeDetector()
         self.scene: deque[float] = deque(maxlen=300)    # change outside the box, last ~10 s
+        self._busy_run = 0                              # frames in a row the outside was busy
         self.prev: np.ndarray | None = None
         self.last_drop = -1e9
         self.count = 0
@@ -170,14 +176,18 @@ class DropDetector:
             self._locate(diff)
             return False
         r = self.rois.splash
-        s_box = float(r.crop(diff).mean())
-        # A splash can light up a lot of the picture, so the test for a hand, a bump
-        # or a light is the change *outside* the box: as big as inside, and far above
-        # normal for outside.
-        area_all, area_box = diff.size, r.crop(diff).size
+        box = r.crop(diff)
+        s_box = float(box.mean())
+        area_all, area_box = diff.size, box.size
         s_out = (float(diff.mean()) * area_all - s_box * area_box) / max(area_all - area_box, 1)
-        disturbed = (len(self.scene) > 30 and s_out > 4.0 * float(np.median(self.scene)) + 0.5
-                     and s_out > 0.5 * s_box)
+        # A splash flashes the backlight across the chamber: about a fifth of the
+        # picture outside the box changes too, for 2-3 frames, less than the box
+        # does. A hand, a bump or a light changes most of the picture, or more
+        # outside than in the box, or keeps changing it for many frames.
+        changed_out = (np.count_nonzero(diff > 20) - np.count_nonzero(box > 20)) / max(area_all - area_box, 1)
+        busy = len(self.scene) > 30 and s_out > 4.0 * float(np.median(self.scene)) + 0.5
+        disturbed = busy and (changed_out > 0.5 or s_out > 1.5 * s_box or self._busy_run >= 4)
+        self._busy_run = self._busy_run + 1 if busy else 0
         self.scene.append(s_out)
         fired = self.det_splash.update(s_box, t, disturbed)
         self.trace.append(s_box)

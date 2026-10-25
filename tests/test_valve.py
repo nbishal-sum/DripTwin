@@ -74,3 +74,76 @@ def test_sticky_tube_is_approached_from_open(tmp_path):
         rows = [r[1] for r in log if a < r[0] < b]
         assert sum(rows) / len(rows) == pytest.approx(target, rel=cfg.band_out)
     assert "probe" not in [e.kind for e in twin.events]
+
+
+def test_valve_moves_wait_for_fresh_drops(tmp_path):
+    """Each correction waits for the settle time plus a full window of new drops,
+    even when the model asks for a tiny step (they once crept every tick)."""
+    # a cliff like the rig's: on it, a 6.5 % flow error asks for a ~0.05 deg step
+    p = load_valve(cal_file(tmp_path, angles=[0, 60, 61, 62, 63], ml_h=[400, 400, 300, 100, 0],
+                            settle_s=8.0, rate_window=16, step_deg=0.5))
+    twin = DripTwin(replace(CONFIG, physics=p), head_cm=80.0)
+    twin.start(Order(200, 20, 1000, 1000), 0.0)
+    moves, last_u, t, nd = [], twin.u, 0.0, 0.0
+    while t < 400:
+        t = round(t + 0.5, 3)
+        while nd < t:
+            twin.on_drop(nd)
+            nd += 60 / (ml_h_to_gtt_min(200, 20) * 1.065)     # steadily 6.5 % fast
+        u = twin.tick(t)
+        if abs(u - last_u) > 1e-9 and t > 20:
+            moves.append(t)
+        last_u = u
+    gaps = [b - a for a, b in zip(moves, moves[1:])]
+    assert len(moves) <= 2 or min(gaps) >= 8.0 + 15 * 60 / (ml_h_to_gtt_min(200, 20) * 1.065)
+
+
+def test_converges_when_rig_drifts_off_table(tmp_path):
+    """Bag 50 % higher than at calibration and the tube pinching 2 deg later:
+    the controller still gets into the band within a few minutes."""
+    angles = [0, 50, 58, 59, 60, 61, 62, 63, 64, 65, 66, 68]
+    ml_h = [150, 150, 150, 104, 104, 104, 93, 93, 93, 21, 21, 0]
+    p = load_valve(cal_file(tmp_path, angles=angles, ml_h=ml_h, settle_s=8.0, rate_window=16,
+                            step_deg=0.5, stall_s=25.0, backlash_deg=1.5))
+    real = replace(p, valve=replace(p.valve, u=tuple(min(1.0, u + 2 / 68) if 0 < u < 1 else u
+                                                     for u in p.valve.u)))
+    plant = SimPlant(cfg=replace(CONFIG, physics=real), head_cm=120.0)
+    twin, _, log = run(600, plant=plant, order=Order(95, 20, 1000, 1000),
+                       twin=DripTwin(replace(CONFIG, physics=p), head_cm=80.0))
+    target = ml_h_to_gtt_min(95, 20)
+    late = [r[1] for r in log if r[0] > 420]
+    assert sum(late) / len(late) == pytest.approx(target, rel=0.08)
+
+
+def test_open_valve_above_target_is_not_free_flow(tmp_path):
+    """The bag gives far more than the target wide open: the controller must close
+    in on it, not call it free flow (it once did, right after start-up)."""
+    p = load_valve(cal_file(tmp_path, settle_s=8.0, rate_window=16, step_deg=0.5, backlash_deg=1.5))
+    plant = SimPlant(cfg=replace(CONFIG, physics=p), head_cm=110.0)       # ~140 drops/min wide open
+    twin, _, log = run(600, plant=plant, order=Order(330, 20, 1000, 1000),
+                       twin=DripTwin(replace(CONFIG, physics=p), head_cm=80.0))
+    assert "free_flow" not in [e.kind for e in twin.events]
+    late = [r[1] for r in log if r[0] > 420]
+    assert sum(late) / len(late) == pytest.approx(ml_h_to_gtt_min(330, 20), rel=0.08)
+
+
+
+@pytest.mark.parametrize("stick_deg", [0, 2, 5])
+def test_sticky_rig_settles_by_feedback(tmp_path, stick_deg):
+    """The rig's curve (flat, then a cliff near 68 deg), the real valve 0.6 deg off
+    the table, and a tube that clings by up to 5 deg. Approaching from the open
+    side, learning the hysteresis and holding the better end of a too-fine bracket
+    get it within the band; a fixed calibration alone did not."""
+    angles = [40, 55, 60, 62, 64, 66, 67, 68, 70, 90]
+    ml_h = [761, 734, 391, 376, 357, 391, 391, 152, 137, 0]
+    p = load_valve(cal_file(tmp_path, angles=angles, ml_h=ml_h, open_deg=40, closed_deg=90,
+                            backlash_deg=1.5, settle_s=8.0, rate_window=16, step_deg=0.5, stall_s=25.0))
+    real = replace(p, valve=replace(p.valve, u=tuple(min(1.0, u + 0.6 / 50) if 0 < u < 1 else u
+                                                     for u in p.valve.u)))
+    plant = SimPlant(cfg=replace(CONFIG, physics=real))
+    plant.stick_u = stick_deg / 50
+    twin, _, log = run(720, plant=plant, order=Order(330, 20, 1000, 1000),
+                       twin=DripTwin(replace(CONFIG, physics=p), head_cm=80.0))
+    late = [r[1] for r in log if r[0] > 480]
+    assert sum(late) / len(late) == pytest.approx(ml_h_to_gtt_min(330, 20), rel=0.08)
+    assert not [e for e in twin.events if e.severity == "alarm"]

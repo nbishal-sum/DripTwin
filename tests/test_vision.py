@@ -28,7 +28,7 @@ def render_and_count(period_s, seconds=60, fps=30, noise=6.0):
     return true, counted
 
 
-@pytest.mark.parametrize("period", [0.75, 1.5, 3.0])     # 80, 40, 20 drops/min
+@pytest.mark.parametrize("period", [0.4, 0.75, 1.5, 3.0])     # 150, 80, 40, 20 drops/min
 def test_counts_match(period):
     true, counted = render_and_count(period)
     assert abs(counted - true) <= 1
@@ -70,6 +70,42 @@ def test_whole_picture_change_is_not_a_drop():
     assert not det.process(bright, 200 / 30)
 
 
+def test_splash_that_flashes_the_whole_chamber_still_counts():
+    """On the rig each splash also lights up ~20 % of the picture outside the box
+    for a frame or two; that once vetoed nearly every drop as a 'disturbance'.
+    Low noise as on the rig, so the flash stands far above the quiet outside."""
+    ch, det = SyntheticChamber(noise=2.0), DropDetector(ROIS)
+    n_drop, true, counted = round(1.5 * 30), 0, 0
+    for n in range(60 * 30):
+        detached = n > 0 and n % n_drop == 0
+        f = ch.frame((n % n_drop) / n_drop, detached)
+        in_box = any(225 <= y < 250 for y in ch._fall)
+        if in_box or 1 in ch._splashes:                # the drop reached the box / splashed this frame
+            # backlight flash outside the box, ~0.8x the box's own change as measured on the rig
+            f = f.copy()
+            f[:, :80] = np.clip(f[:, :80].astype(int) + (60 if 1 in ch._splashes else 25), 0, 255)
+        fired = det.process(f, n / 30)
+        if n / 30 >= WARMUP_S:
+            true += detached
+            counted += fired
+    assert abs(counted - true) <= 1
+
+
+def test_hand_in_view_is_not_counted():
+    """A hand moving through the picture for a second: change outside for many frames."""
+    ch, det = SyntheticChamber(), DropDetector(ROIS)
+    for n in range(200):
+        det.process(ch.frame(0.5, False), n / 30)
+    rng, fired = np.random.default_rng(3), 0
+    skin = rng.integers(120, 240, (300, 300)).astype(np.uint8)
+    for k in range(30):
+        f = ch.frame(0.5, False).copy()
+        x = 6 * k                                      # sweeps across, over the box too
+        f[0:290, x:x + 90] = skin[0:290, k:k + 90][:, :f[0:290, x:x + 90].shape[1]]
+        fired += det.process(f, (200 + k) / 30)
+    assert fired <= 1                                  # at most its first frame
+
+
 def test_old_orifice_box_file_still_loads(tmp_path):
     p = tmp_path / "rois.json"
     p.write_text('{"orifice": {"x": 1, "y": 2, "w": 30, "h": 40}}')
@@ -98,3 +134,16 @@ def test_real_brio_recording_counts_every_splash():
     found = sum(any(abs(f - r) <= 6 for f in fired) for r in expected)
     extra = sum(not any(abs(f - r) <= 6 for r in ref) for f in fired)
     assert found == len(expected) and extra == 0 and len(expected) > 20
+
+
+def test_fast_drip_keeps_counting():
+    """40 s of the box signal from the rig at ~150 drops/min. A falling drop is in
+    the box almost all the time, so between splashes the signal sits around 10 and
+    splashes reach 27-40; a threshold of 3.5x that baseline counted only ~40 %."""
+    from driptwin.vision import SpikeDetector
+    data = np.loadtxt(Path(__file__).parent / "data" / "fast_drip_box_signal.csv", delimiter=",")
+    t, x = data[:, 0], data[:, 1]
+    peaks = sum(1 for i in range(1, len(x) - 1) if x[i] > 20 and x[i] >= x[i - 1] and x[i] >= x[i + 1])
+    det = SpikeDetector(warmup=45)                    # 15 fps: the same 3 s of learning
+    fired = sum(det.update(v, tt) for v, tt in zip(x, t))
+    assert fired >= 0.8 * peaks

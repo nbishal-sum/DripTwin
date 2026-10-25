@@ -132,3 +132,29 @@ def test_monitor_mode_narrates_drops():
     assert kinds(twin) == ["drops_detected", "rate_change", "drops_stopped"]
     change = twin.events[1].data
     assert change["from"] == pytest.approx(40, rel=0.05) and change["to"] == pytest.approx(60, rel=0.05)
+
+
+def test_too_much_flow_is_spoken_with_the_bag_height_excess():
+    """The valve isn't holding (tube out of the pinch): flow stays ~40 % over target.
+    The twin says so, with how much higher the bag would have to be by the model."""
+    plant = SimPlant(head_cm=50.0)
+    plant.command = lambda u: None            # valve has no effect
+    plant.u = plant.u_cmd = 0.0               # tube fully open
+    twin, _, _ = run(240, plant=plant, order=Order(360, 20, 1000, 1000))
+    ev = [e for e in twin.events if e.kind == "high_flow"]
+    assert len(ev) == 1                        # once, then not again within 2 minutes
+    assert ev[0].data["excess_head_cm"] > 5
+    assert "higher than it should be" in ev[0].data["say"]["en"]
+    assert "más alta" in ev[0].data["say"]["es"]
+
+
+def test_no_drops_says_whether_the_valve_or_the_line_is_closed():
+    twin, _, _ = run(120, [(60, lambda p: p.kink(True))])
+    said = [e.data["say"]["en"] for e in twin.events if e.kind == "no_flow"]
+    assert said and "although the valve is open" in said[0]       # a kink, not the valve
+
+    twin = DripTwin(head_cm=80.0)
+    twin.start(Order(120, 20, 1000, 1000), 0.0)
+    twin.u = 1.0                                                  # valve shut
+    twin._say_no_flow(30.0, twin.order, 25.0)
+    assert twin.events[-1].data["say"]["en"].startswith("Nothing is dripping. The valve is closed")

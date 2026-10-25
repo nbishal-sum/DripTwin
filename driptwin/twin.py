@@ -17,8 +17,8 @@ from enum import Enum
 import math
 
 from .config import CONFIG, Config
-from .physics import (DROP_CURVES, HeadEstimator, drop_volume_ml, gtt_min_to_ml_h,
-                      ml_h_to_gtt_min, valve_for_flow,
+from .physics import (DROP_CURVES, HeadEstimator, clamp_resistance, drop_volume_ml,
+                      flow_ml_min, gtt_min_to_ml_h, ml_h_to_gtt_min, valve_for_flow,
                       max_flow_ml_min)
 from .rate import DropLog, RateEstimator, RateEstimate
 
@@ -104,6 +104,13 @@ class DripTwin:
         self._unstick: tuple[float, float] | None = None   # (target u, when to go there)
         self._settled = False
         self._ever_settled = False
+        self._high_since: float | None = None     # flow well above target since (s)
+        self._lo = self._hi = None        # valve search bracket (see _search)
+        self._push, self._push_dir = 0, False
+        self._opened: float | None = None     # flow before the last opening move
+        self._lo_err = self._hi_err = 0.0
+        v = cfg.physics.valve                 # hysteresis allowance, learned while running
+        self._backlash = v.backlash_u if v else 0.0
         self._history: list[dict] = []
         self._flowing, self._ref_rate = False, 0.0     # monitor-mode narration state
         self.monitor_ml = 0.0            # monitor mode: volume dripped, drop by drop
@@ -124,6 +131,7 @@ class DripTwin:
         self.mode = Mode.RUNNING
         self.t_started = t
         self._settled = self._ever_settled = False
+        self._lo = self._hi = None
         # Feed-forward from the model: start where physics says we should be.
         self._move(valve_for_flow(self.head0, order.target_ml_min, self.cfg.physics), t)
         self._emit(t, "order_started", "info",
@@ -194,6 +202,7 @@ class DripTwin:
         self._check_free_flow(t, o)
         if self.mode in ALARMS:
             return self.u
+        self._check_high_flow(t, o)
         if self._check_stopped(t, o):
             return self.u
         self._check_head_change(t)
@@ -203,6 +212,12 @@ class DripTwin:
     # ---- control ----------------------------------------------------------
     def _control(self, t: float, o: Order) -> None:
         if not self.rate.confident:
+            fast = self._quick_rate(t)
+            if not (self.cfg.physics.valve and fast and fast > 1.4 * o.target_gtt_min):
+                return
+            # a spike (the tube springing open): close now, don't wait for a full window
+            self._settled = False
+            self._search(t, (fast - o.target_gtt_min) / o.target_gtt_min)
             return
         err = (self.rate.gtt_min - o.target_gtt_min) / o.target_gtt_min
         head = self.est.state.head_inst_cm
@@ -213,9 +228,16 @@ class DripTwin:
             if self.mode == Mode.ALARM_LOW_HEAD:
                 self.mode = Mode.RUNNING
             return
+        if self._settled:
+            self._lo = self._hi = None     # drifted out of the band: search afresh
         self._settled = False
         u_star = valve_for_flow(head, o.target_ml_min, self.cfg.physics)
-        if u_star <= 0.0 and max_flow_ml_min(head, self.cfg.physics) < 0.95 * o.target_ml_min:
+        v = self.cfg.physics.valve
+        if v:     # measured valve: only when it really is wide open and still short
+            short = self.u <= self.cfg.safety.u_min + 1e-3 and err < -self.cfg.band_out
+        else:
+            short = u_star <= 0.0 and max_flow_ml_min(head, self.cfg.physics) < 0.95 * o.target_ml_min
+        if short:
             p = self.cfg.physics
             need = o.target_ml_min * p.r0 + p.p_venous_cmh2o
             if self.mode != Mode.ALARM_LOW_HEAD:
@@ -225,28 +247,98 @@ class DripTwin:
                            f"{o.rate_ml_h:g} mL/h. Raise the bag about "
                            f"{max(0, need - head):.0f} cm (to ~{need:.0f} cm above the site).",
                            {"head_cm": head, "needed_cm": need})
+        if v:
+            self._search(t, err)
+            return
         # Under-relax to avoid chasing noise in the head estimate; cap the step so
         # one bad reading can't swing the valve.
-        v = self.cfg.physics.valve
-        cap = min(self.cfg.max_step_u, v.max_step_u) if v else self.cfg.max_step_u
+        cap = self.cfg.max_step_u
         step = max(-cap, min(cap, 0.7 * (u_star - self.u)))
+        if abs(step) < 0.002:
+            return      # below what the servo resolves
         self._move(self.u + step, t)
 
-    def _move(self, u_target: float, t: float, unstick: bool = True) -> None:
+    def _quick_rate(self, t: float) -> float | None:
+        """drops/min over the last 6 drops since the valve settled, or None."""
+        fresh = [d for d in self.drop_log.drops if d >= self.t_move][-7:]
+        if len(fresh) < 7 or t - fresh[-1] > 3.0:
+            return None
+        return 60.0 * 6 / (fresh[-1] - fresh[0])
+
+    def _search(self, t: float, err: float) -> None:
+        """Measured valve, by feedback rather than calibration. Flow only ever falls
+        as the valve closes, but the curve has a cliff that moves with bag height
+        and the tube does not come back the same way it was squeezed, so:
+        - bracket: keep the last too-fast (lo) and too-slow (hi) positions and try
+          halfway; until both are known, step in the error's direction, doubling;
+        - every position is approached from the open side (see _move);
+        - an opening move that changes nothing means the tube stayed squashed:
+          release fully and allow more hysteresis from then on;
+        - when the bracket is finer than the servo resolves, hold at whichever end
+          was closer to target, unless both are far off (then one end is stale)."""
+        v = self.cfg.physics.valve
+        cap = v.max_step_u
+        release = False
+        if self._opened is not None:                   # judge the last opening move
+            if err < 0 and self.rate.gtt_min < 1.1 * self._opened:
+                release = True
+                self._backlash = min(0.4, max(2 * self._backlash, 2 * cap))
+                self._lo = self._hi = None             # measured on a squashed tube
+            self._opened = None
+        if err > 0:                                    # too fast: close (u up)
+            self._lo, self._lo_err = self.u, err
+            if self._hi is not None and self._hi <= self.u:
+                self._hi = None
+        else:
+            self._hi, self._hi_err = self.u, err
+            if self._lo is not None and self._lo >= self.u:
+                self._lo = None
+        if self._lo is not None and self._hi is not None and self._hi - self._lo < 0.2 * cap:
+            best, best_err = ((self._lo, self._lo_err) if abs(self._lo_err) <= abs(self._hi_err)
+                              else (self._hi, self._hi_err))
+            if abs(best_err) <= 2 * self.cfg.band_out:
+                self._settled = True                   # as close as this valve gets here
+                if abs(self.u - best) > 1e-4:
+                    self._move(best, t)
+                return
+            if err > 0:
+                self._hi = None
+            else:
+                self._lo = None
+        if self._lo is not None and self._hi is not None:
+            self._push = 0
+            u_next = (self._lo + self._hi) / 2
+        else:
+            self._push = self._push + 1 if self._push_dir == (err > 0) else 1
+            self._push_dir = err > 0
+            step = cap * min(4, 2 ** (self._push - 1))
+            u_next = self.u + (step if err > 0 else -step)
+        u_next = min(u_next, v.shut_u - 0.01)          # searching never shuts the tube fully
+        if u_next < self.u:
+            self._opened = self.rate.gtt_min           # check next time that it helped
+        self._move(u_next, t, release=release)
+
+    def _move(self, u_target: float, t: float, unstick: bool = True, release: bool = False) -> None:
         s = self.cfg.safety
         u_target = min(s.u_max, max(s.u_min, u_target))
         v = self.cfg.physics.valve
         self._unstick = None
-        if unstick and v and u_target < self.u - 0.002 and (v.backlash_u or self.u >= v.shut_u):
+        if unstick and v and u_target < self.u - 0.002 and (self._backlash or self.u >= v.shut_u or release):
             # opening: go past the target to free the tube, then close onto it.
-            # From fully shut the walls stick together: release all the way.
-            shut = self.u >= v.shut_u
-            over = s.u_min if shut else max(s.u_min, u_target - v.backlash_u)
+            # From fully shut (or found stuck) the walls cling: release all the way.
+            shut = self.u >= v.shut_u or release
+            # Approach every position from the open side: back off past the target by
+            # the learned hysteresis, and at least to the last angle known to flow too
+            # fast (seen while closing), so the tube is always squeezed the same way.
+            back = u_target - self._backlash
+            if self._lo is not None and self._lo < u_target:
+                back = min(back, self._lo - self._backlash / 2)
+            over = s.u_min if shut else max(s.u_min, back)
             dwell = 4.0 if shut else 1.0
             self._unstick = (u_target, t + (self.u - over) / s.max_slew_per_s + dwell)
             u_target = over
         du = abs(u_target - self.u)
-        if du > 0.002:
+        if du > 1e-4:
             # Data is only fresh once the slew-limited servo has arrived and the
             # chamber has settled; drops before that reflect an in-between valve.
             self.t_move = t + du / s.max_slew_per_s + (v.settle_s if v else 1.0)
@@ -306,6 +398,7 @@ class DripTwin:
             return True
 
         if self._probe is None:
+            self._say_no_flow(t, o, age)
             # Active test: open the valve a bit. A low bag would respond; a kink won't.
             self._probe = {"u0": self.u, "t0": t}
             self.mode = Mode.PROBING
@@ -329,12 +422,79 @@ class DripTwin:
                        {"remaining_ml": remaining})
         return True
 
+    def _check_high_flow(self, t: float, o: Order) -> None:
+        """Flow well above target for a while: say so, with how much higher the bag
+        would have to be, by the model, to give this flow at this valve setting."""
+        r = self.rate
+        high = (r.confident and r.gtt_min > 1.25 * o.target_gtt_min
+                and self._unstick is None and t >= self.t_move and t - self.t_started > 60)
+        if not high:
+            self._high_since = None
+            return
+        if self._high_since is None:
+            self._high_since = t
+        if t - self._high_since < 30 or self._recent("high_flow", t, 120):
+            return
+        p = self.cfg.physics
+        q = gtt_min_to_ml_h(r.gtt_min, o.drop_factor) / 60.0           # mL/min measured
+        resistance = p.r0 + clamp_resistance(self.u, p)                 # cmH2O per mL/min
+        if resistance == float("inf"):
+            return
+        excess_cm = (q - o.target_ml_min) * resistance / p.rho_g
+        pct = (r.gtt_min / o.target_gtt_min - 1) * 100
+        size = f"{excess_cm / 100:.1f} meters" if excess_cm >= 100 else f"{excess_cm:.0f} centimeters"
+        size_es = f"{excess_cm / 100:.1f} metros" if excess_cm >= 100 else f"{excess_cm:.0f} centímetros"
+        self._emit(t, "high_flow", "warn",
+                   f"Something is wrong: flow is {r.gtt_min:.0f} drops/min, {pct:.0f}% above the "
+                   f"{o.target_gtt_min:.0f} target. By the physical model the bag is about "
+                   f"{excess_cm:.0f} cm higher than it should be for this valve setting. "
+                   f"Lower the bag or check the tubing and the pinch valve.",
+                   {"rate_gtt_min": r.gtt_min, "excess_head_cm": excess_cm,
+                    "say": {"en": f"Warning. Something is wrong. Flow is {pct:.0f} percent above "
+                                  f"target. By the physical model, the bag is about {size} higher "
+                                  f"than it should be. Lower the bag, or check the tubing.",
+                            "es": f"Atención. Algo va mal. El flujo está {pct:.0f} por ciento por "
+                                  f"encima del objetivo. Según el modelo físico, la bolsa está unos "
+                                  f"{size_es} más alta de lo debido. Baje la bolsa o revise el tubo."}})
+
+    def _say_no_flow(self, t: float, o: Order, age: float) -> None:
+        """Nothing dripping: if the model says the valve itself is (nearly) shut at its
+        position, say so; otherwise the line must be closed somewhere else."""
+        p = self.cfg.physics
+        predicted = flow_ml_min(self.est.state.head_cm, self.u, p=p)
+        deg = (f" at {p.valve.open_deg + (p.valve.closed_deg - p.valve.open_deg) * self.u:.0f} degrees"
+               if p.valve else "")
+        if predicted < 0.1 * o.target_ml_min:
+            self._emit(t, "no_flow", "warn",
+                       f"Nothing has dripped for {age:.0f} s: the valve is closed{deg}.",
+                       {"valve_u": self.u, "say": {
+                           "en": f"Nothing is dripping. The valve is closed{deg}.",
+                           "es": "No está goteando. La válvula está cerrada."}})
+        else:
+            self._emit(t, "no_flow", "warn",
+                       f"Nothing has dripped for {age:.0f} s although the valve is open{deg}: by "
+                       f"the physical model the line is closed somewhere (clamp, kink or pinched "
+                       f"tube).",
+                       {"valve_u": self.u, "say": {
+                           "en": "Nothing is dripping, although the valve is open. By the physical "
+                                 "model, the line is closed somewhere: a clamp, a kink, or a "
+                                 "pinched tube.",
+                           "es": "No está goteando, aunque la válvula está abierta. Según el modelo "
+                                 "físico, la línea está cerrada en algún punto: una pinza, un "
+                                 "doblez o un tubo pinzado."}})
+
     def _check_free_flow(self, t: float, o: Order) -> None:
         r = self.rate.gtt_min
         hard = self.cfg.safety.hard_max_gtt_min
-        releasing = self._unstick is not None or t < self.t_move    # our own brief full-open
-        if (self.rate.confident and r > 1.6 * o.target_gtt_min and self.u < 0.05
-                and not releasing) or r > hard:
+        # our own brief full-open to free the tube (seconds): judged once it is over
+        releasing = self._unstick is not None or t < self.t_move
+        # Generic model: fast with the valve near open means it isn't holding. Measured
+        # valve: it starts open and closes in on the target, so "isn't holding" means
+        # still far too fast with the search closed to its limit (tube out of the pinch).
+        v = self.cfg.physics.valve
+        failing = self.u >= v.shut_u - 0.02 if v else self.u < 0.05
+        if not releasing and ((self.rate.confident and r > 1.6 * o.target_gtt_min and failing)
+                              or r > hard):
             self.mode = Mode.ALARM_FREE_FLOW
             self._move(1.0, t)
             self._emit(t, "free_flow", "alarm",

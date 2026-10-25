@@ -315,8 +315,9 @@ ALARM_FALLBACK = {"en": "Alarm. Check the line and the patient.",
                   "es": "Alarma. Revise la línea y al paciente."}
 
 
-def alarm_lines(kind: str, setting: str) -> list[tuple[str, str]]:
-    """(text, lang) to speak for an alarm. setting: "en", "es" or "both"."""
+def alarm_lines(kind: str, setting: str, say: dict | None = None) -> list[tuple[str, str]]:
+    """(text, lang) to speak for an alarm. setting: "en", "es" or "both". `say` is an
+    event's own words ({"en": ..., "es": ...}), used instead of the fixed line."""
     langs = ("en", "es") if setting == "both" else (setting if setting in LANGS else "en",)
-    lines = ALARM_SPEECH.get(kind, ALARM_FALLBACK)
+    lines = {**ALARM_FALLBACK, **say} if say else ALARM_SPEECH.get(kind, ALARM_FALLBACK)
     return [(lines[lang], lang) for lang in langs]

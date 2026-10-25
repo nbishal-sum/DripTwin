@@ -37,7 +37,7 @@ class ValveTable:
     # closing did, so opening moves overshoot by it and settle back while closing.
     backlash_u: float = 0.0
     # Squashed fully shut, it reopens only near u=0 (the release angle).
-    shut_u: float = 0.97
+    shut_u: float = 0.99
     # Seconds after the servo arrives before drops reflect the new position: the
     # drip chamber's air pocket buffers flow changes.
     settle_s: float = 1.0

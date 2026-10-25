@@ -73,6 +73,8 @@ async def lifespan(app: FastAPI):
     yield
     for t in tasks:
         t.cancel()
+    if hasattr(rt.device, "close"):
+        rt.device.close()          # real valve: opened, firmware stopped
 
 
 app = FastAPI(lifespan=lifespan)
@@ -304,10 +306,10 @@ def _to_clients(msg: dict) -> None:
         q.put_nowait(msg)
 
 
-async def announce_alarm(kind: str) -> None:
+async def announce_alarm(kind: str, say: dict | None = None) -> None:
     """Speak an alarm on every open dashboard, straight from the device event: no LLM
     in the path, urgent voice, and in Spanish too if the dashboard asks for it."""
-    lines = voice.alarm_lines(kind, VOICE["lang"])
+    lines = voice.alarm_lines(kind, VOICE["lang"], say)
     for i, (text, lang) in enumerate(lines):
         clip = uuid.uuid4().hex
         try:
@@ -331,9 +333,9 @@ async def alarm_speaker() -> None:
 
     async def worker():
         while True:
-            kind = await kinds.get()
+            kind, say = await kinds.get()
             try:
-                await announce_alarm(kind)
+                await announce_alarm(kind, say)
             except Exception as err:
                 print("[alarm]", repr(err))
 
@@ -343,8 +345,9 @@ async def alarm_speaker() -> None:
         while True:
             msg = await q.get()
             for e in msg.get("events", []):
-                if e["severity"] == "alarm":
-                    kinds.put_nowait(e["kind"])
+                say = (e.get("data") or {}).get("say")
+                if e["severity"] == "alarm" or say:     # warnings with their own words too
+                    kinds.put_nowait((e["kind"], say))
     finally:
         task.cancel()
         rt.subscribers.discard(q)

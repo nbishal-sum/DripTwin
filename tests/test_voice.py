@@ -206,3 +206,25 @@ def test_alarm_is_spoken_to_every_dashboard(app):
     assert all(m["type"] == "audio" and m["alarm"] for m in msgs) and len(msgs) == 2
     assert [m["first"] for m in msgs] == [True, True]       # one clip per language
     assert [(lang, style) for _, lang, style in spoken[-2:]] == [("en", "alarm"), ("es", "alarm")]
+
+
+def test_event_words_replace_the_fixed_alarm_line():
+    say = {"en": "Warning. Flow is high.", "es": "Atención. Flujo alto."}
+    assert voice.alarm_lines("high_flow", "both", say) == [("Warning. Flow is high.", "en"),
+                                                           ("Atención. Flujo alto.", "es")]
+    assert voice.alarm_lines("high_flow", "en") == [(voice.ALARM_FALLBACK["en"], "en")]
+
+
+def test_warning_with_words_is_spoken_by_the_server(app):
+    client, server, spoken = app
+    import time as _t
+    client.post("/api/voice-settings", json={"lang": "en"})     # earlier tests may leave "both"
+    server.rt._broadcast({"type": "state", "events": [
+        {"kind": "no_flow", "severity": "warn", "message": "x",
+         "data": {"say": {"en": "Nothing is dripping. The valve is closed."}}},
+        {"kind": "probe", "severity": "warn", "message": "quiet", "data": {}}]})
+    for _ in range(50):                          # the speaker worker runs on the app's loop
+        if spoken:
+            break
+        _t.sleep(0.05)
+    assert [s[:3] for s in spoken] == [("Nothing is dripping. The valve is closed.", "en", "alarm")]
