@@ -10,3 +10,4 @@ __pycache__/
 # local data: test videos (~250 MB) and the infusion log
 recordings/
 driptwin_log.db
+cspell.json
