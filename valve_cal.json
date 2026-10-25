@@ -1,0 +1,104 @@
+{
+ "note": "recalibrated with ripple filter (0.8 s) on the counter; closing curve approached from 40 deg; squashed shut the tube reopens only near 45 deg",
+ "head_cm": null,
+ "drop_factor": 20,
+ "measured": "2026-10-25 10:37",
+ "open_deg": 40,
+ "closed_deg": 68,
+ "backlash_deg": 1.5,
+ "settle_s": 8.0,
+ "rate_window": 8,
+ "rows": [
+  {
+   "angle": 40.0,
+   "gtt_min": 37.43,
+   "drops": 25,
+   "secs": 40.1,
+   "ml_h": 142.6
+  },
+  {
+   "angle": 56.0,
+   "gtt_min": 37.43,
+   "drops": 25,
+   "secs": 40.1,
+   "ml_h": 142.6
+  },
+  {
+   "angle": 58.0,
+   "gtt_min": 43.43,
+   "drops": 29,
+   "secs": 40.1,
+   "ml_h": 165.6
+  },
+  {
+   "angle": 59.0,
+   "gtt_min": 26.95,
+   "drops": 18,
+   "secs": 40.1,
+   "ml_h": 102.6
+  },
+  {
+   "angle": 60.0,
+   "gtt_min": 26.95,
+   "drops": 18,
+   "secs": 40.1,
+   "ml_h": 102.6
+  },
+  {
+   "angle": 61.0,
+   "gtt_min": 28.44,
+   "drops": 19,
+   "secs": 40.1,
+   "ml_h": 108.3
+  },
+  {
+   "angle": 62.0,
+   "gtt_min": 22.46,
+   "drops": 15,
+   "secs": 40.1,
+   "ml_h": 85.4
+  },
+  {
+   "angle": 63.0,
+   "gtt_min": 25.45,
+   "drops": 17,
+   "secs": 40.1,
+   "ml_h": 96.9
+  },
+  {
+   "angle": 64.0,
+   "gtt_min": 25.46,
+   "drops": 17,
+   "secs": 40.1,
+   "ml_h": 96.9
+  },
+  {
+   "angle": 65.0,
+   "gtt_min": 4.49,
+   "drops": 3,
+   "secs": 40.1,
+   "ml_h": 17.1
+  },
+  {
+   "angle": 66.0,
+   "gtt_min": 4.49,
+   "drops": 3,
+   "secs": 40.1,
+   "ml_h": 17.1
+  },
+  {
+   "angle": 67.0,
+   "gtt_min": 7.49,
+   "drops": 5,
+   "secs": 40.1,
+   "ml_h": 28.5
+  },
+  {
+   "angle": 68.0,
+   "gtt_min": 0.0,
+   "drops": 0,
+   "secs": 0,
+   "ml_h": 0.0
+  }
+ ]
+}

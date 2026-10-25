@@ -202,7 +202,7 @@ canvas { display: block; width: 100%; height: 240px; }
 .hint { margin: 0 0 10px; text-align: center; font-size: 12px; color: var(--muted); }
 
 /* ---- controls ---- */
-input, button {
+input, button, select {
   font: inherit;
   color: var(--text);
   background: var(--panel);
@@ -234,6 +234,7 @@ button.primary:hover { background: linear-gradient(140deg, var(--accent), var(--
 .btns { display: flex; flex-wrap: wrap; gap: 8px; }
 label.check { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; font-size: 14px; font-weight: 600; }
 label.check input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
+label.check select { flex: 1; min-width: 0; padding: 6px 10px; font-weight: 600; cursor: pointer; }
 form.order { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 form.order label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 form.order button { grid-column: span 2; }

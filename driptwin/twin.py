@@ -17,7 +17,8 @@ from enum import Enum
 import math
 
 from .config import CONFIG, Config
-from .physics import (HeadEstimator, ml_h_to_gtt_min, valve_for_flow,
+from .physics import (DROP_CURVES, HeadEstimator, drop_volume_ml, gtt_min_to_ml_h,
+                      ml_h_to_gtt_min, valve_for_flow,
                       max_flow_ml_min)
 from .rate import DropLog, RateEstimator, RateEstimate
 
@@ -86,7 +87,9 @@ class DripTwin:
         self.cfg = cfg
         self.monitor_only = monitor_only   # webcam only, no valve: count drops, never infuse
         self.drop_log = DropLog()
-        self.rater = RateEstimator(cfg.rate_window_drops)
+        v = cfg.physics.valve
+        self.rater = (RateEstimator(v.rate_window, mean=True) if v and v.rate_window
+                      else RateEstimator(cfg.rate_window_drops))
         self.head0 = head_cm or cfg.default_head_cm
         self.est = HeadEstimator(self.head0, 1000.0, cfg.physics)
         self.order: Order | None = None
@@ -98,13 +101,18 @@ class DripTwin:
         self.events: list[Event] = []
         self.rate = RateEstimate(0.0, False, math.inf, 0)
         self._probe: dict | None = None
+        self._unstick: tuple[float, float] | None = None   # (target u, when to go there)
         self._settled = False
+        self._ever_settled = False
         self._history: list[dict] = []
         self._flowing, self._ref_rate = False, 0.0     # monitor-mode narration state
+        self.monitor_ml = 0.0            # monitor mode: volume dripped, drop by drop
 
     # ---- inputs -----------------------------------------------------------
     def on_drop(self, t: float) -> None:
         self.drop_log.add(t)
+        if self.monitor_only:            # each drop adds its own size at the current rate
+            self.monitor_ml += drop_volume_ml(self.rate.gtt_min, self.cfg.monitor_drop_factor)
 
     def start(self, order: Order, t: float) -> None:
         if self.monitor_only:
@@ -115,12 +123,15 @@ class DripTwin:
         self.est = HeadEstimator(self.head0, order.bag_volume_ml, self.cfg.physics)
         self.mode = Mode.RUNNING
         self.t_started = t
-        self._settled = False
+        self._settled = self._ever_settled = False
         # Feed-forward from the model: start where physics says we should be.
         self._move(valve_for_flow(self.head0, order.target_ml_min, self.cfg.physics), t)
         self._emit(t, "order_started", "info",
                    f"Started {order.rate_ml_h:g} mL/h with a {order.drop_factor} gtt/mL set "
-                   f"= {order.target_gtt_min:.1f} drops/min, VTBI {order.vtbi_ml:g} mL.",
+                   f"= {order.target_gtt_min:.1f} drops/min, VTBI {order.vtbi_ml:g} mL."
+                   + (f" Using the measured drop size for this set "
+                      f"({drop_volume_ml(order.target_gtt_min, order.drop_factor):.3f} mL "
+                      f"per drop at this rate)." if order.drop_factor in DROP_CURVES else ""),
                    asdict(order))
 
     def pause(self, t: float) -> None:
@@ -161,7 +172,7 @@ class DripTwin:
         if o is None or self.mode in (Mode.IDLE, Mode.PAUSED, Mode.COMPLETE):
             return self.u
 
-        q = self.rate.gtt_min / o.drop_factor           # mL/min
+        q = gtt_min_to_ml_h(self.rate.gtt_min, o.drop_factor) / 60.0   # mL/min
         s = self.est.update(q, self.u, dt, self.rate.confident)
         self._record(t, q)
 
@@ -173,6 +184,11 @@ class DripTwin:
             return self.u
 
         if self.mode in ALARMS:
+            return self.u
+        if self._unstick:
+            if t < self._unstick[1]:
+                return self.u                  # releasing the tube: nothing to judge yet
+            self._move(self._unstick[0], t, unstick=False)    # back down onto the closing curve
             return self.u
 
         self._check_free_flow(t, o)
@@ -190,9 +206,9 @@ class DripTwin:
             return
         err = (self.rate.gtt_min - o.target_gtt_min) / o.target_gtt_min
         head = self.est.state.head_inst_cm
-        if abs(err) < 0.03:
+        if abs(err) < (self.cfg.band_out if self._settled else self.cfg.band_in):
             if not self._settled:
-                self._settled = True
+                self._settled = self._ever_settled = True
                 self.est.rebaseline()
             if self.mode == Mode.ALARM_LOW_HEAD:
                 self.mode = Mode.RUNNING
@@ -209,17 +225,33 @@ class DripTwin:
                            f"{o.rate_ml_h:g} mL/h. Raise the bag about "
                            f"{max(0, need - head):.0f} cm (to ~{need:.0f} cm above the site).",
                            {"head_cm": head, "needed_cm": need})
-        # Under-relax to avoid chasing noise in the head estimate.
-        self._move(self.u + 0.7 * (u_star - self.u), t)
+        # Under-relax to avoid chasing noise in the head estimate; cap the step so
+        # one bad reading can't swing the valve.
+        v = self.cfg.physics.valve
+        cap = min(self.cfg.max_step_u, v.max_step_u) if v else self.cfg.max_step_u
+        step = max(-cap, min(cap, 0.7 * (u_star - self.u)))
+        self._move(self.u + step, t)
 
-    def _move(self, u_target: float, t: float) -> None:
+    def _move(self, u_target: float, t: float, unstick: bool = True) -> None:
         s = self.cfg.safety
         u_target = min(s.u_max, max(s.u_min, u_target))
+        v = self.cfg.physics.valve
+        self._unstick = None
+        if unstick and v and u_target < self.u - 0.002 and (v.backlash_u or self.u >= v.shut_u):
+            # opening: go past the target to free the tube, then close onto it.
+            # From fully shut the walls stick together: release all the way.
+            shut = self.u >= v.shut_u
+            over = s.u_min if shut else max(s.u_min, u_target - v.backlash_u)
+            dwell = 4.0 if shut else 1.0
+            self._unstick = (u_target, t + (self.u - over) / s.max_slew_per_s + dwell)
+            u_target = over
         du = abs(u_target - self.u)
         if du > 0.002:
             # Data is only fresh once the slew-limited servo has arrived and the
             # chamber has settled; drops before that reflect an in-between valve.
-            self.t_move = t + du / s.max_slew_per_s + 1.0
+            self.t_move = t + du / s.max_slew_per_s + (v.settle_s if v else 1.0)
+        if self._unstick:
+            self.t_move = self._unstick[1]
         self.u = u_target   # slew limiting is enforced by the device layer + firmware
 
     # ---- diagnostics ------------------------------------------------------
@@ -227,6 +259,11 @@ class DripTwin:
         if not self.rate.confident:
             return
         s = self.est.state
+        if not self._ever_settled:
+            # the starting head is a guess: until the flow has been on target once,
+            # a different implied head is the twin learning, not the bag moving
+            s.head_baseline_cm = s.head_inst_cm
+            return
         delta = s.head_inst_cm - s.head_baseline_cm
         if abs(delta) > 10.0 and not self._recent("head_change", t, 20):
             direction = "lowered" if delta < 0 else "raised"
@@ -244,6 +281,8 @@ class DripTwin:
         age = self.rate.last_drop_age_s
         if t - self.t_started < stall + 4:
             return False
+        if self.mode != Mode.PROBING and t - self.t_move < stall:
+            return False                  # valve just moved: give the drip time to restart
         if age < stall:
             if self._probe:
                 self._emit(t, "probe_cleared", "info",
@@ -289,7 +328,9 @@ class DripTwin:
     def _check_free_flow(self, t: float, o: Order) -> None:
         r = self.rate.gtt_min
         hard = self.cfg.safety.hard_max_gtt_min
-        if (self.rate.confident and r > 1.6 * o.target_gtt_min and self.u < 0.05) or r > hard:
+        releasing = self._unstick is not None or t < self.t_move    # our own brief full-open
+        if (self.rate.confident and r > 1.6 * o.target_gtt_min and self.u < 0.05
+                and not releasing) or r > hard:
             self.mode = Mode.ALARM_FREE_FLOW
             self._move(1.0, t)
             self._emit(t, "free_flow", "alarm",
@@ -337,6 +378,7 @@ class DripTwin:
 
     def snapshot(self) -> dict:
         o, s = self.order, self.est.state
+        df = o.drop_factor if o else self.cfg.monitor_drop_factor if self.monitor_only else None
         return {
             "t": self.t,
             "mode": self.mode.value,
@@ -344,14 +386,16 @@ class DripTwin:
             "order": asdict(o) if o else None,
             "target_gtt_min": o.target_gtt_min if o else None,
             "rate_gtt_min": round(self.rate.gtt_min, 2),
-            "rate_ml_h": round(self.rate.gtt_min * 60 / o.drop_factor, 1) if o else None,
+            "rate_ml_h": round(gtt_min_to_ml_h(self.rate.gtt_min, df), 1) if df else None,
+            "drop_volume_ml": round(drop_volume_ml(self.rate.gtt_min, df), 4) if df else None,
+            "drop_factor": df,
             "rate_confident": self.rate.confident,
             "last_drop_age_s": None if math.isinf(self.rate.last_drop_age_s)
                                else round(self.rate.last_drop_age_s, 1),
             "valve_u": round(self.u, 3),
             "head_cm": round(s.head_fast_cm, 1),
             "head_baseline_cm": round(s.head_baseline_cm, 1),
-            "infused_ml": round(s.infused_ml, 1),
+            "infused_ml": round(self.monitor_ml if self.monitor_only else s.infused_ml, 1),
             "remaining_ml": round(s.remaining_ml, 1),
             "drops_counted": self.drop_log.count,
         }

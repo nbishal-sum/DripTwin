@@ -24,6 +24,33 @@ class SafetyLimits:
 
 
 @dataclass(frozen=True)
+class ValveTable:
+    """The pinch valve as measured on the rig (python -m driptwin.valvecal):
+    flow at each servo position, taken at one bag height. u is the servo
+    position, 0 = open_deg .. 1 = closed_deg, linear in angle."""
+    u: tuple                    # increasing, 0..1
+    q_ml_min: tuple             # flow at each u, at head_cm
+    head_cm: float
+    open_deg: float
+    closed_deg: float
+    # The tube sticks once squashed: reopening needs this much more travel than
+    # closing did, so opening moves overshoot by it and settle back while closing.
+    backlash_u: float = 0.0
+    # Squashed fully shut, it reopens only near u=0 (the release angle).
+    shut_u: float = 0.97
+    # Seconds after the servo arrives before drops reflect the new position: the
+    # drip chamber's air pocket buffers flow changes.
+    settle_s: float = 1.0
+    # Drops through this valve come irregularly: rate = mean interval over this
+    # many drops (0 = the usual median estimate).
+    rate_window: int = 0
+
+    @property
+    def max_step_u(self) -> float:
+        return 1.0 / abs(self.closed_deg - self.open_deg)     # 1 degree per correction
+
+
+@dataclass(frozen=True)
 class PhysicsParams:
     """Lumped hydraulic model of a gravity set.
 
@@ -39,6 +66,7 @@ class PhysicsParams:
     kc: float = 1.0
     u_occlude: float = 0.97              # beyond this the tube is sealed
     bag_height_cm_per_l: float = 15.0    # fluid surface drop as a 1 L bag drains
+    valve: ValveTable | None = None      # measured valve; replaces the 1/gap^3 curve
 
 
 @dataclass(frozen=True)
@@ -47,7 +75,14 @@ class Config:
     physics: PhysicsParams = field(default_factory=PhysicsParams)
     control_period_s: float = 0.5
     rate_window_drops: int = 8           # inter-drop intervals in the rate estimate
+    # Tolerance band with hysteresis: "in range" once within band_in of the target,
+    # corrections resume only beyond band_out (drop-rate noise is a few %).
+    band_in: float = 0.05
+    band_out: float = 0.08
+    max_step_u: float = 0.1              # one correction moves the valve at most this far
     default_head_cm: float = 80.0
+    # Monitor mode has no order to say which set is on: flow is shown for this one.
+    monitor_drop_factor: int = 20
 
 
 CONFIG = Config()

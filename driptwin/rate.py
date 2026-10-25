@@ -34,8 +34,12 @@ class RateEstimator:
     drop bounds the rate from above, so the estimate decays toward zero
     instead of freezing at the last good value."""
 
-    def __init__(self, window: int = 8):
+    def __init__(self, window: int = 8, mean: bool = False):
+        """mean=True: for drips that come irregularly (near a pinch drops arrive
+        in bursts and pairs), use the mean interval over the window. It is the
+        actual flow; a median then flips between the short and long spacing."""
         self.window = window
+        self.mean = mean
 
     def estimate(self, drops: deque[float], now: float, since: float = 0.0) -> RateEstimate:
         """`since` discards intervals from before the last valve move, so a
@@ -46,6 +50,13 @@ class RateEstimator:
         if len(times) < 3:
             return RateEstimate(0.0, False, age, max(0, len(times) - 1))
         intervals = [b - a for a, b in zip(times, times[1:])]
+        if self.mean:
+            avg = (times[-1] - times[0]) / len(intervals)
+            on_time = age <= 3.0 * avg
+            effective = avg if on_time else age
+            rate = 60.0 / effective if effective > 0 else 0.0
+            confident = times is fresh and len(intervals) >= min(6, self.window) and on_time
+            return RateEstimate(rate, confident, age, len(intervals))
         med = statistics.median(intervals)
         # Normal jitter: trust the interval median. A gap clearly longer than
         # usual caps the rate (so it decays when drops stop) but is not trusted

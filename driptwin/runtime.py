@@ -18,10 +18,14 @@ import time
 
 import cv2
 
+from dataclasses import replace
+
 from .config import CONFIG
+from .physics import load_valve
 from .sim import SimPlant, SyntheticChamber
 from .storage import Store
 from .twin import DripTwin
+from .valvecal import CAL_FILE as VALVE_CAL
 from .vision import DropDetector, ROI, ROIConfig, CameraCounter
 
 
@@ -32,7 +36,7 @@ class SimDevice:
         self.on_drop = on_drop
         self.plant = SimPlant()
         self.chamber = SyntheticChamber(fps=self.FPS)
-        self.detector = DropDetector(ROIConfig(ROI(95, 30, 50, 50)))
+        self.detector = DropDetector(ROIConfig(ROI(85, 225, 70, 40)))
         self.jpeg: bytes | None = None
         self.status = {"u": 1.0, "host": True}
         self._frame_n = 0
@@ -145,7 +149,14 @@ class Runtime:
     def __init__(self, sim: bool = True, port: str | None = None, camera: int | str | None = 0,
                  head_cm: float | None = None, monitor: bool = False):
         self.lock = threading.Lock()
-        self.twin = DripTwin(head_cm=head_cm, monitor_only=monitor)
+        cfg = CONFIG
+        if not sim and not monitor and VALVE_CAL.exists():
+            # the real valve: use its measured curve instead of the generic model
+            cfg = replace(CONFIG, physics=load_valve(VALVE_CAL))
+            v = cfg.physics.valve
+            print(f"[runtime] valve calibration {VALVE_CAL.name}: open {v.open_deg:g} deg, "
+                  f"shut {v.closed_deg:g} deg, {v.q_ml_min[0] * 60:.0f} mL/h wide open")
+        self.twin = DripTwin(cfg, head_cm=head_cm, monitor_only=monitor)
         self.t0 = time.monotonic()
         if sim:
             self.device = SimDevice(self._on_drop)
@@ -155,7 +166,7 @@ class Runtime:
             self.device = PicoDevice(self._on_drop, port, camera)
         self.sim = sim
         self.monitor = monitor
-        self.store = Store()
+        self.store = Store(physics=cfg.physics)
         self.subscribers: set[asyncio.Queue] = set()
         self._events_sent = 0
         self._fw_alarms_seen = 0
@@ -168,6 +179,8 @@ class Runtime:
             t -= self.t0      # the webcam thread stamps in monotonic time
         with self.lock:
             self.twin.on_drop(t)
+            snap = self.twin.snapshot()
+        self.store.drop(snap, t)
 
     def log(self, kind: str, data: dict) -> None:
         self.store.event(kind, "info", json.dumps(data, default=str), data)
@@ -194,7 +207,7 @@ class Runtime:
                 self._broadcast({"type": "state", "state": snap,
                                  "events": [e.__dict__ for e in new]})
                 if (snap["order"] or self.monitor) and t >= next_tel:
-                    next_tel = t + 2.0
+                    next_tel = t + 1.0
                     self.store.telemetry(snap)
             if t >= next_hb:
                 next_hb = t + 1.0
