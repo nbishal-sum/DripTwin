@@ -1,0 +1,19 @@
+{
+  "version": "0.2",
+  "language": "en,en-GB",
+  "ignorePaths": [".venv", ".pytest_cache", "*.db", "rois.json"],
+  "words": [
+    "absdiff", "accum", "actx", "asdict", "astype", "asynccontextmanager", "autocommit",
+    "bootsel", "btns", "cartesia", "changepoint", "classmethod", "contextlib", "ctrl",
+    "dataclass", "dataclasses", "deque", "deps", "driptwin", "elif", "ewma", "fastapi",
+    "fromiter", "fromtimestamp", "generativelanguage", "googleapis", "hershey", "httpx",
+    "hypertable", "imencode", "imshow", "imwrite", "isdigit", "isfinite", "isinf", "isnan",
+    "jsonb", "keyframes", "maxlen", "minmax", "mjpeg", "mjpg", "mpremote", "ndarray", "ndim",
+    "nowait", "nowrap", "nums", "ondataavailable", "onended", "onpointerdown",
+    "onpointerleave", "onpointerup", "onstop", "parametrize", "pathlib", "photoresistor",
+    "pollin", "polylines", "psycopg", "pydantic", "qsize", "rebaseline", "roboto", "rois",
+    "roundtrip", "segoe", "sparkline", "staticmethod", "strftime", "thonny", "timescale",
+    "timestamptz", "tobytes", "truehead", "uint", "usbmodem", "uvicorn", "venv", "vtbi",
+    "warmup", "webm"
+  ]
+}

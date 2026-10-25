@@ -1,0 +1,12 @@
+# secrets: API keys live here, never commit
+.env
+
+# local environment and caches
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+
+# local data: test videos (~250 MB) and the infusion log
+recordings/
+driptwin_log.db

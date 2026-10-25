@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DripTwin</title>
+<style>
+  :root {
+    --bg: #eef5fb; --panel: #ffffff; --line: #dce8f4; --text: #1d3349; --muted: #6b8199;
+    --accent: #2b7bd6; --accent-soft: #e4effc; --accent-deep: #1f62b0;
+    --target: #9fb3c8; --head: #8c7ae6; --warn: #c98a1e; --warn-soft: #fff4df;
+    --alarm: #d14848; --alarm-soft: #fdeded; --ok: #2a9a7f; --ok-soft: #e1f4ee;
+    --shadow: 0 1px 2px rgba(29, 51, 73, .04), 0 6px 20px rgba(43, 123, 214, .07);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text);
+         background: linear-gradient(180deg, #e3effa 0, var(--bg) 320px) no-repeat, var(--bg);
+         font: 15px/1.5 ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; flex-wrap: wrap;
+           max-width: 1400px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--accent);
+          display: grid; place-items: center; box-shadow: var(--shadow); }
+  header h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  .sub { font-size: 13px; color: var(--muted); }
+  .pill { margin-left: auto; padding: 7px 16px; border-radius: 99px; font-size: 14px; font-weight: 600;
+          background: var(--panel); color: var(--muted); box-shadow: var(--shadow);
+          display: inline-flex; align-items: center; gap: 8px; }
+  .pill::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .8; }
+  .pill.running { background: var(--ok-soft); color: var(--ok); }
+  .pill.running::before { animation: breathe 2.4s ease-in-out infinite; }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.alarm { background: var(--alarm-soft); color: var(--alarm); }
+  .pill.alarm::before { animation: breathe 1s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .25; } }
+  #banner { display: none; max-width: 1352px; margin: 0 auto 4px; padding: 14px 18px; border-radius: 14px;
+            background: var(--alarm-soft); color: #8f2a2a; font-weight: 600;
+            border-left: 5px solid var(--alarm); box-shadow: var(--shadow); }
+  @media (max-width: 1400px) { #banner { margin: 0 24px 4px; } }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 20px;
+         padding: 12px 24px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 12px 16px; }
+    header { padding: 14px 16px; }
+    #banner { margin: 0 16px 4px; }
+  }
+  .panel { background: var(--panel); border-radius: 18px; padding: 18px 20px; min-width: 0;
+           box-shadow: var(--shadow); }
+  .panel h2 { font-size: 15px; color: var(--text); margin: 0 0 12px; font-weight: 650; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { background: var(--accent-soft); border-radius: 14px; padding: 12px 14px; }
+  .stat:first-child { background: var(--accent); color: #fff; }
+  .stat:first-child .l, .stat:first-child .u { color: rgba(255, 255, 255, .85); }
+  .stat .v { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .stat .u { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .stat .l { font-size: 13px; color: var(--muted); font-weight: 500; }
+  canvas { width: 100%; height: 240px; display: block; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 14px; height: 4px; vertical-align: middle;
+              margin-right: 6px; border-radius: 2px; }
+  .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .twin { display: grid; grid-template-columns: 90px 1fr; gap: 14px; align-items: center; }
+  .gauge { position: relative; height: 160px; border-left: 2px solid var(--line); margin-left: 30px; }
+  .gauge .mark { position: absolute; left: -6px; width: 60px; height: 2px; }
+  .gauge .mark span { position: absolute; left: 64px; top: -9px; font-size: 12px; white-space: nowrap; }
+  .gauge .bag { position: absolute; left: 8px; width: 26px; height: 34px; border-radius: 6px 6px 12px 12px;
+                background: var(--head); opacity: .8; transition: bottom .6s; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+  #video { width: 100%; border-radius: 12px; background: #dfe9f3; min-height: 140px; display: block; }
+  #events { max-height: 280px; overflow-y: auto; font-size: 14px; }
+  .ev { padding: 10px 0 10px 18px; border-bottom: 1px solid var(--line); position: relative; }
+  .ev:last-child { border-bottom: 0; }
+  .ev::before { content: ""; position: absolute; left: 2px; top: 17px; width: 8px; height: 8px;
+                border-radius: 50%; background: var(--accent); }
+  .ev.warn::before { background: var(--warn); } .ev.alarm::before { background: var(--alarm); }
+  .ev .k { font-size: 13px; font-weight: 650; }
+  .ev.warn .k { color: var(--warn); } .ev.alarm .k { color: var(--alarm); }
+  .ev time { float: right; color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); font-size: 14px; margin: 0; }
+  #chat { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  #chat:empty { display: none; }
+  .msg { padding: 9px 13px; border-radius: 16px; max-width: 90%; }
+  .msg.you { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 5px; }
+  .msg.bot { align-self: flex-start; background: var(--accent-soft); border-bottom-left-radius: 5px; }
+  .row { display: flex; gap: 8px; }
+  input, button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+                  border-radius: 12px; padding: 10px 12px; }
+  input { flex: 1; min-width: 0; }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  button { cursor: pointer; font-weight: 600; transition: background .15s, border-color .15s; }
+  button:hover { border-color: var(--accent); background: var(--accent-soft); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-deep); }
+  #ptt { width: 100%; padding: 15px; font-size: 16px; margin-bottom: 4px; border-radius: 14px;
+         display: flex; align-items: center; justify-content: center; gap: 10px; }
+  #ptt.rec { background: var(--alarm); border-color: var(--alarm); }
+  .hint { text-align: center; color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  form.order { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  form.order label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  form.order button { grid-column: span 2; }
+  label.check { display: flex; gap: 10px; align-items: center; padding: 6px 0; cursor: pointer; font-size: 14px; }
+  label.check input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
+  #hfState { display: flex; align-items: center; gap: 10px; min-height: 22px; margin: 2px 0 10px; }
+  #hfText { white-space: pre-line; }
+  .meter { flex: none; width: 54px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--ok); border-radius: 3px; transition: width .08s; }
+  footer { max-width: 1400px; margin: 0 auto; padding: 0 24px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg width="20" height="24" viewBox="0 0 20 24"><path d="M10 1C10 1 2 10.5 2 15.5a8 8 0 0 0 16 0C18 10.5 10 1 10 1z" fill="#fff"/></svg>
+    </div>
+    <div><h1>DripTwin</h1><div class="sub">IV drip monitor</div></div>
+  </div>
+  <span id="mode" class="pill">Connecting…</span>
+</header>
+<div id="banner" role="alert"></div>
+<main>
+  <div class="col">
+    <section class="panel">
+      <div class="stats">
+        <div class="stat"><div class="l">Drip rate</div><div class="v" id="rate">–<span class="u"> drops/min</span></div></div>
+        <div class="stat"><div class="l" id="lTarget">Target</div><div class="v" id="target">–<span class="u"> drops/min</span></div></div>
+        <div class="stat"><div class="l" id="lMlh">Flow</div><div class="v" id="mlh">–<span class="u"> mL/hour</span></div></div>
+        <div class="stat"><div class="l" id="lValve">Clamp open</div><div class="v" id="valve">–<span class="u"> %</span></div></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2 id="chartTitle">Drip rate compared with target</h2>
+      <canvas id="chart"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>drip rate</span>
+        <span class="ctl"><i style="background:var(--target)"></i>target</span>
+        <span class="ctl"><i style="background:var(--head)"></i>bag height (right scale)</span>
+        <span class="ctl"><i style="background:var(--warn)"></i>clamp</span>
+      </div>
+    </section>
+    <section class="panel ctl">
+      <h2>Bag and line check</h2>
+      <div class="twin">
+        <div class="gauge" id="gauge">
+          <div class="bag" id="bag"></div>
+          <div class="mark" id="baseMark" style="background:var(--muted)"><span class="muted">usual</span></div>
+        </div>
+        <dl class="kv">
+          <dt>Estimated bag height</dt><dd id="head">–</dd>
+          <dt>Usual bag height</dt><dd id="base">–</dd>
+          <dt class="simonly">Actual height (practice)</dt><dd class="simonly" id="truehead">–</dd>
+          <dt>Given so far</dt><dd id="infused">–</dd>
+          <dt>Left in bag</dt><dd id="remaining">–</dd>
+          <dt>Last drop</dt><dd id="age">–</dd>
+          <dt>Drops counted</dt><dd id="sensors">–</dd>
+        </dl>
+      </div>
+      <p class="muted">DripTwin works out how high the bag is from the drip speed. A sudden change means the
+        bag or the patient moved. If drops don't come back when the clamp opens, the line is probably kinked.</p>
+    </section>
+    <section class="panel">
+      <h2>Activity</h2>
+      <div id="events"><p class="empty" id="noEvents">Nothing to report yet.</p></div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="panel">
+      <h2>Assistant</h2>
+      <button id="ptt" class="primary">
+        <svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><rect x="4" y="1" width="8" height="12" rx="4" fill="currentColor"/><path d="M1.5 9.5a6.5 6.5 0 0 0 13 0M8 16v3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        <span id="pttLabel">Hold to talk</span>
+      </button>
+      <p class="hint">or hold the space bar</p>
+      <label class="check"><input type="checkbox" id="handsFree" checked> Listen for “Assistant”</label>
+      <div id="hfState" class="muted"><span class="meter" id="hfMeter" hidden><i></i></span><span id="hfText"></span></div>
+      <div id="chat"></div>
+      <form class="row" id="askForm">
+        <input id="askText" placeholder="Type a question…" autocomplete="off">
+        <button class="primary">Send</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>Drip chamber</h2>
+      <img id="video" alt="Live view of the drip chamber">
+      <p class="muted" id="feedNote" style="display:none;color:var(--warn)">Camera picture paused. Reconnecting…</p>
+      <p class="muted" id="camNote">The box flashes green each time a drop is counted.</p>
+    </section>
+    <section class="panel" id="simPanel" style="display:none">
+      <h2>Practice scenarios</h2>
+      <div class="btns">
+        <button data-sim="lower_bag">Lower bag</button>
+        <button data-sim="raise_bag">Raise bag</button>
+        <button data-sim="kink">Kink the line</button>
+        <button data-sim="unkink">Release kink</button>
+        <button data-sim="creep">Clamp slowly slipping</button>
+        <button data-sim="drain">Nearly empty bag</button>
+      </div>
+    </section>
+    <section class="panel ctl">
+      <h2>Start an infusion</h2>
+      <form class="order" id="orderForm">
+        <label>Rate (mL/hour)<input name="rate_ml_h" type="number" value="120" step="any"></label>
+        <label>Drip set (drops/mL)<input name="drop_factor" type="number" value="20"></label>
+        <label>Volume to give (mL)<input name="vtbi_ml" type="number" value="1000" step="any"></label>
+        <label>Bag size (mL)<input name="bag_volume_ml" type="number" value="1000" step="any"></label>
+        <button class="primary">Start infusion</button>
+      </form>
+      <div class="btns" style="margin-top:10px">
+        <button id="pause">Pause</button><button id="resume">Resume</button>
+      </div>
+    </section>
+  </div>
+</main>
+<footer id="credits"></footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const hist = [];
+let hello = {}, alarmText = "";
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+const MODE_LABEL = {
+  idle: "Ready", running: "Running", probing: "Checking the line", paused: "Paused",
+  complete: "Finished", alarm_occlusion: "Line blocked", alarm_empty: "Bag empty",
+  alarm_free_flow: "Flowing too fast", alarm_low_head: "Bag too low",
+};
+const EVENT_LABEL = {
+  drops_detected: "Drops started", drops_stopped: "Drops stopped", rate_change: "Rate changed",
+  order_started: "Infusion started", paused: "Paused", resumed: "Resumed", head_hint: "Bag height noted",
+  head_change: "Bag moved", low_head: "Bag too low", probe: "Checking the line", probe_cleared: "Line is fine",
+  occlusion: "Line blocked", empty_bag: "Bag empty", free_flow: "Flowing too fast", complete: "Finished",
+  fw_host_lost: "Clamp controller lost connection",
+};
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.type === "hello") {
+      hello = msg;
+      const parts = [msg.agent && `${msg.agent_name || "Claude"}`, msg.voice && "Cartesia voice",
+                     msg.store === "timescale" && "Tiger Data"].filter(Boolean);
+      $("credits").textContent = parts.length ? "Powered by " + parts.join(" · ") : "";
+      $("simPanel").style.display = msg.sim ? "" : "none";
+      document.querySelectorAll(".simonly").forEach(el => el.style.display = msg.sim ? "" : "none");
+      if (msg.monitor) setupMonitor();
+      if ($("handsFree").checked && !hf.on) handsFreeStart();      // hands-free from page load
+    } else if (msg.type === "state") {
+      render(msg.state);
+      msg.events.forEach(addEvent);
+    }
+  };
+  ws.onclose = () => { $("mode").className = "pill"; $("mode").textContent = "Reconnecting…"; setTimeout(connect, 1000); };
+}
+
+// Monitor mode: webcam counts drops, no valve. Hide everything about control.
+function setupMonitor() {
+  document.querySelectorAll(".ctl").forEach(el => el.style.display = "none");
+  $("lTarget").textContent = "Drops counted";
+  $("lMlh").textContent = "Last drop";
+  $("lValve").textContent = "Camera";
+  $("chartTitle").textContent = "Drip rate over time";
+  $("askText").placeholder = "“How fast is it dripping?”";
+}
+
+let actx = null;
+
+function renderMonitor(s) {
+  const d = s.device || {}, set = (id, v, u) => $(id).innerHTML = `${v}<span class="u"> ${u}</span>`;
+  const age = s.last_drop_age_s, live = age != null && age < 10;
+  $("mode").className = "pill " + (d.camera_error ? "alarm" : live ? "running" : "");
+  $("mode").textContent = d.camera_error ? "Camera not found" : live ? "Dripping" : "Waiting for drops";
+  set("rate", s.rate_gtt_min.toFixed(1), "drops/min");
+  set("target", s.drops_counted, "drops");
+  set("mlh", age != null ? age.toFixed(0) : "–", "sec ago");
+  set("valve", d.camera_ok ? "On" : "Off", "");
+  if (d.camera_error) {
+    if ($("banner").style.display !== "block") console.warn("camera:", d.camera_error);
+    $("banner").textContent = "Can't see the camera. Check that it's plugged in and pointed at the drip chamber.";
+    $("banner").style.display = "block";
+  } else $("banner").style.display = "none";
+  hist.push(s); if (hist.length > 360) hist.shift();
+  draw();
+}
+
+function render(s) {
+  if (s.monitor_only) return renderMonitor(s);
+  const mode = s.mode;
+  const cls = mode.startsWith("alarm_low") ? "warn" : mode.startsWith("alarm") ? "alarm"
+            : mode === "running" ? "running" : mode === "probing" ? "warn" : "";
+  $("mode").className = "pill " + cls;
+  $("mode").textContent = MODE_LABEL[mode] || mode.replace(/_/g, " ");
+  const set = (id, v, u) => $(id).innerHTML = `${v}<span class="u"> ${u}</span>`;
+  set("rate", s.rate_gtt_min.toFixed(1), "drops/min");
+  set("target", s.target_gtt_min ? s.target_gtt_min.toFixed(1) : "–", "drops/min");
+  set("mlh", s.rate_ml_h != null ? s.rate_ml_h.toFixed(0) : "–", "mL/hour");
+  set("valve", ((1 - s.valve_u) * 100).toFixed(0), "%");
+  $("head").textContent = s.head_cm.toFixed(0) + " cm";
+  $("base").textContent = s.head_baseline_cm.toFixed(0) + " cm";
+  $("truehead").textContent = s.device && s.device.true_head_cm != null ? s.device.true_head_cm.toFixed(0) + " cm" : "–";
+  $("infused").textContent = s.infused_ml.toFixed(0) + " mL";
+  $("remaining").textContent = s.order ? s.remaining_ml.toFixed(0) + " mL" : "–";
+  $("age").textContent = s.last_drop_age_s != null ? s.last_drop_age_s.toFixed(0) + " sec ago" : "–";
+  $("sensors").textContent = s.drops_counted;
+  const g = $("gauge").clientHeight, px = (h) => Math.max(0, Math.min(g - 34, (h / 150) * (g - 34)));
+  $("bag").style.bottom = px(s.head_cm) + "px";
+  $("baseMark").style.bottom = (px(s.head_baseline_cm) + 17) + "px";
+  if (!cls.includes("alarm")) $("banner").style.display = "none";
+  if (s.order) { hist.push(s); if (hist.length > 360) hist.shift(); }
+  draw();
+}
+
+function draw() {
+  const cv = $("chart"), dpr = devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const x = cv.getContext("2d"); x.scale(dpr, dpr); x.clearRect(0, 0, W, H);
+  x.font = "13px ui-rounded, -apple-system, sans-serif";
+  if (hist.length < 2) {
+    x.fillStyle = css("--muted");
+    x.fillText(hello.monitor ? "Waiting for drops…" : "Start an infusion to see the drip rate here", 12, 22);
+    return;
+  }
+  const mon = !!hello.monitor;
+  const L = 36, R = 44, T = 8, B = 22, w = W - L - R, h = H - T - B;
+  const t0 = hist[0].t, t1 = hist[hist.length - 1].t, span = Math.max(30, t1 - t0);
+  const rMax = Math.max(10, ...hist.map(s => Math.max(s.rate_gtt_min, s.target_gtt_min || 0))) * 1.25;
+  const hMax = 150;
+  const X = (t) => L + (t - t0) / span * w;
+  x.strokeStyle = css("--line"); x.fillStyle = css("--muted"); x.font = "11px ui-rounded, -apple-system, sans-serif"; x.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = T + h - i / 4 * h;
+    x.beginPath(); x.moveTo(L, y); x.lineTo(L + w, y); x.stroke();
+    x.textAlign = "right"; x.fillText((rMax * i / 4).toFixed(0), L - 6, y + 4);
+    if (!mon) { x.textAlign = "left"; x.fillText((hMax * i / 4).toFixed(0) + " cm", L + w + 6, y + 4); }
+  }
+  x.textAlign = "left"; x.fillText(`last ${Math.round(span / 60) >= 2 ? Math.round(span / 60) + " min" : span.toFixed(0) + " sec"}`, L, H - 4);
+  const line = (key, max, color, width, dash) => {
+    x.strokeStyle = css(color); x.lineWidth = width; x.lineJoin = "round"; x.setLineDash(dash || []); x.beginPath();
+    hist.forEach((s, i) => { const y = T + h - (s[key] / max) * h; i ? x.lineTo(X(s.t), y) : x.moveTo(X(s.t), y); });
+    x.stroke(); x.setLineDash([]);
+  };
+  if (!mon) {
+    line("target_gtt_min", rMax, "--target", 1.5, [5, 4]);
+    line("head_cm", hMax, "--head", 1.5);
+    x.globalAlpha = .7; line("valve_u", 1, "--warn", 1); x.globalAlpha = 1;
+  }
+  line("rate_gtt_min", rMax, "--accent", 2.5);
+}
+
+const fmtT = (t) => { const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${m}:${String(s).padStart(2, "0")}`; };
+
+function addEvent(e) {
+  $("noEvents")?.remove();
+  const d = document.createElement("div");
+  d.className = "ev " + e.severity;
+  d.innerHTML = `<time>${fmtT(e.t)}</time><div class="k"></div><div></div>`;
+  d.querySelector(".k").textContent = EVENT_LABEL[e.kind] || e.kind.replace(/_/g, " ");
+  d.lastChild.textContent = e.message;
+  $("events").prepend(d);
+  if (e.severity === "alarm") {
+    $("banner").textContent = e.message; $("banner").style.display = "block";
+  }
+  // Events are shown, never spoken: the assistant only talks when asked.
+}
+
+// ---- audio ----
+let speaking = Promise.resolve(), audioBusy = 0;   // audioBusy > 0 while anything is queued or playing
+function queueAudio(run) {
+  audioBusy++;
+  speaking = speaking.then(() => new Promise(run)).then(() => { audioBusy--; });
+}
+// Replies play through one AudioContext, resumed on the first click or key press: browsers
+// (Safari above all) block <audio> that starts after a network request, but not a context
+// that was unlocked by a user gesture.
+function unlockAudio() {
+  try { actx = actx || new AudioContext(); if (actx.state === "suspended") actx.resume(); } catch (e) {}
+  if (hf.ctx && hf.ctx.state === "suspended") hf.ctx.resume().catch(() => {});
+}
+addEventListener("pointerdown", unlockAudio); addEventListener("keydown", unlockAudio);
+function play(b64) {
+  queueAudio(async (res) => {
+    try {
+      unlockAudio();
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const src = actx.createBufferSource();
+      src.buffer = await actx.decodeAudioData(bytes.buffer);
+      src.connect(actx.destination); src.onended = res; src.start();
+    } catch (e) {
+      const a = new Audio("data:audio/mpeg;base64," + b64); a.onended = res; a.onerror = res;
+      a.play().catch(() => { hf.last = "\nTap the page once to turn on sound."; res(); });
+    }
+  });
+}
+function speakLocal(text) {
+  queueAudio((res) => {
+    const u = new SpeechSynthesisUtterance(text); u.onend = res; u.onerror = res; speechSynthesis.speak(u);
+  });
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: body ? JSON.stringify(body) : undefined });
+  return r.json();
+}
+
+function chat(who, text) {
+  const d = document.createElement("div"); d.className = "msg " + who; d.textContent = text;
+  $("chat").append(d); $("chat").scrollTop = 1e9; return d;
+}
+
+async function handleReply(r) {
+  if (r.error) { console.warn(r.error); return chat("bot", "Sorry, that didn't work. Please try again."); }
+  if (r.reply) chat("bot", r.reply);
+  if (r.audio_b64) play(r.audio_b64); else if (r.reply) speakLocal(r.reply);
+}
+
+$("askForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const text = $("askText").value.trim(); if (!text) return;
+  $("askText").value = ""; chat("you", text);
+  const thinking = chat("bot", "…");
+  const r = await post("/api/ask", { text, speak: true }); thinking.remove(); handleReply(r);
+};
+
+// push-to-talk: MediaRecorder -> /api/voice (Cartesia STT -> Claude -> Cartesia TTS)
+let rec, chunks = [];
+// Safari records mp4, Chrome/Firefox webm: name the file after what was actually recorded.
+const audioName = (type) => "speech." + (type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm");
+async function startRec() {
+  if (rec && rec.state === "recording") return;
+  if (!hello.voice) { $("askText").focus(); $("askText").placeholder = "Voice isn't available. Type your question"; return; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  rec = new MediaRecorder(stream); chunks = [];
+  rec.ondataavailable = (e) => chunks.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const fd = new FormData(); fd.append("audio", new Blob(chunks, { type: rec.mimeType }), audioName(rec.mimeType));
+    const thinking = chat("bot", "…");
+    const r = await (await fetch("/api/voice", { method: "POST", body: fd })).json();
+    thinking.remove();
+    if (r.transcript) chat("you", r.transcript);
+    handleReply(r);
+  };
+  rec.start(); $("ptt").classList.add("rec"); $("pttLabel").textContent = "Listening… let go to send";
+}
+function stopRec() {
+  if (rec && rec.state === "recording") rec.stop();
+  $("ptt").classList.remove("rec"); $("pttLabel").textContent = "Hold to talk";
+}
+$("ptt").onpointerdown = startRec; $("ptt").onpointerup = stopRec; $("ptt").onpointerleave = stopRec;
+
+// hands-free: a volume-based speech detector cuts the mic into utterances; each one goes to
+// /api/voice with wake=true, and the server only passes ones starting with "assistant" to the
+// agent. Saying just "assistant" arms the next utterance (10 s) as the question.
+const hf = { on: false, armedUntil: 0, inflight: 0, rec: null, last: "", queue: Promise.resolve() };
+function hfShow(text, level) {
+  $("hfText").textContent = text;
+  $("hfMeter").hidden = level == null;
+  if (level != null) $("hfMeter").firstChild.style.width = Math.min(100, level * 100) + "%";
+}
+async function handsFreeStart() {
+  if (!hello.voice) {
+    $("handsFree").checked = false;
+    hfShow("Voice isn't available. You can type your question below."); return;
+  }
+  hf.on = true;                    // set first: a WebSocket reconnect must not start a second one
+  try {
+    hf.stream = await navigator.mediaDevices.getUserMedia(
+      { audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    hf.on = false; $("handsFree").checked = false;
+    hfShow("The microphone is blocked. Allow it in the browser, then tick the box again."); return;
+  }
+  hf.ctx = new AudioContext();     // starts suspended on page load until the first click (browser rule)
+  hf.an = hf.ctx.createAnalyser(); hf.an.fftSize = 1024;
+  hf.ctx.createMediaStreamSource(hf.stream).connect(hf.an);
+  hf.buf = new Float32Array(hf.an.fftSize);
+  hf.floor = 0.01;
+  hf.timer = setInterval(hfTick, 50);
+  unlockAudio();
+}
+function handsFreeStop() {
+  hf.on = false; clearInterval(hf.timer);
+  if (hf.rec && hf.rec.state === "recording") { hf.rec.discard = true; hf.rec.stop(); }
+  if (hf.stream) hf.stream.getTracks().forEach(t => t.stop());
+  if (hf.ctx) hf.ctx.close();
+  hfShow("");
+}
+function hfTick() {
+  if (hf.ctx.state === "suspended") {
+    hfShow("Tap anywhere on the page to start listening."); return;
+  }
+  hf.an.getFloatTimeDomainData(hf.buf);
+  let sum = 0; for (const v of hf.buf) sum += v * v;
+  const rms = Math.sqrt(sum / hf.buf.length), now = performance.now();
+  const threshold = Math.max(hf.floor * 3, 0.015);
+  const talking = audioBusy > 0 || speechSynthesis.speaking;      // don't listen to ourselves
+  const recording = hf.rec && hf.rec.state === "recording";
+  const state = recording ? "Listening…" : now < hf.armedUntil ? "Go ahead, I'm listening…"
+    : hf.inflight ? "Thinking…" : talking ? "Speaking…" : "Say “Assistant” to ask a question";
+  hfShow(state + hf.last, rms / threshold / 3);                   // meter full at 3x the trigger level
+  if (recording) {
+    if (talking) { hf.rec.discard = true; hf.rec.stop(); return; }
+    if (rms > threshold) hf.tLoud = now;
+    if (now - hf.tLoud > 900 || now - hf.t0 > 12000) {          // 0.9 s of silence ends it
+      hf.rec.short = hf.tLoud - hf.t0 < 350; hf.rec.stop();
+    }
+  } else if (!talking && !(rec && rec.state === "recording")) {
+    if (rms > threshold) { hfRecord(); hf.t0 = hf.tLoud = now; }
+    else hf.floor = hf.floor * 0.98 + rms * 0.02;              // learn the room's noise level
+  }
+}
+function hfRecord() {
+  const r = new MediaRecorder(hf.stream), chunks = [];
+  r.ondataavailable = (e) => chunks.push(e.data);
+  // Sent one at a time: after "assistant… <pause> …how many drops?", the question must wait
+  // for the wake reply to arm it, or it goes out with wake=true and is ignored.
+  r.onstop = () => {
+    if (r.discard || r.short) return;
+    const blob = new Blob(chunks, { type: r.mimeType });
+    hf.queue = hf.queue.then(() => hfSend(blob));
+  };
+  r.start(); hf.rec = r;
+}
+async function hfSend(blob) {
+  const armed = performance.now() < hf.armedUntil;
+  const fd = new FormData();
+  fd.append("audio", blob, audioName(blob.type)); fd.append("wake", armed ? "false" : "true");
+  hf.inflight++;
+  try {
+    const r = await (await fetch("/api/voice", { method: "POST", body: fd })).json();
+    if (r.error) { console.warn(r.error); hf.last = "\nSorry, that didn't work. Please try again."; return; }
+    if (!r.transcript) { hf.last = "\nDidn't catch that."; return; }
+    if (r.ignored) { hf.last = `\nHeard “${r.transcript}”. Start with “Assistant”.`; return; }
+    hf.last = "";
+    chat("you", r.transcript);
+    if (r.wake) { hf.armedUntil = performance.now() + 10000; chime(); return; }
+    hf.armedUntil = 0;
+    handleReply(r);
+  } catch (e) {
+    hf.last = "\nConnection lost. Reconnecting…";
+  } finally { hf.inflight--; }
+}
+function chime() {
+  try {
+    actx = actx || new AudioContext();
+    [880, 1320].forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + i * 0.12;
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.11);
+    });
+  } catch (e) {}
+}
+$("handsFree").onchange = (e) => e.target.checked ? handsFreeStart() : handsFreeStop();
+addEventListener("keydown", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); startRec(); } });
+addEventListener("keyup", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT") stopRec(); });
+
+document.querySelectorAll("[data-sim]").forEach(b => b.onclick = () => post("/api/sim/" + b.dataset.sim));
+$("orderForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const body = { rate_ml_h: +f.rate_ml_h, drop_factor: +f.drop_factor, vtbi_ml: +f.vtbi_ml, bag_volume_ml: +f.bag_volume_ml };
+  const r = await post("/api/order", body); if (r.error) alert(r.error);
+};
+$("pause").onclick = () => post("/api/pause");
+$("resume").onclick = () => post("/api/resume");
+addEventListener("resize", draw);
+
+// Poll single frames instead of an MJPEG <img> stream: works in every browser
+// (Safari freezes MJPEG) and makes a stalled feed visible instead of silent.
+let frameFails = 0;
+async function pollFrame() {
+  try {
+    const r = await fetch("/frame.jpg", { cache: "no-store" });
+    if (r.status === 200) {
+      const u = URL.createObjectURL(await r.blob()), img = $("video");
+      img.onload = () => URL.revokeObjectURL(u);
+      img.src = u; frameFails = 0;
+    } else frameFails++;
+  } catch (e) { frameFails++; }
+  $("feedNote").style.display = frameFails > 30 ? "" : "none";
+  setTimeout(pollFrame, 100);
+}
+pollFrame();
+connect();
+</script>
+</body>
+</html>
