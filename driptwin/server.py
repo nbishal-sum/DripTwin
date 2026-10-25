@@ -237,10 +237,10 @@ async def ask(body: Say):
     return _stream(_answer(text, body.speak, lang))
 
 
-# "assistant", "hey assistant", "Cartesia AI assistant"... at the start of an utterance.
-# The leading "a" is optional because the browser can clip the first syllable.
-WAKE = re.compile(r"^\W*(?:(?:hey|hi|ok|okay)\W+)?(?:cartesia\W+)?(?:a\.?\s?i\.?\W+)?"
-                  r"(?:a?ss?ist[ae]n(?:t|ts|ce)|a\s+sis\s?tant|assist\s+and)\b\W*", re.I)
+# "assistant", "hey assistant", "Cartesia AI assistant", "oye asistente"... at the start of an
+# utterance. The leading "a" is optional because the browser can clip the first syllable.
+WAKE = re.compile(r"^\W*(?:(?:hey|hi|ok|okay|oye|hola)\W+)?(?:cartesia\W+)?(?:a\.?\s?i\.?\W+)?"
+                  r"(?:a?ss?ist[ae]n(?:t|ts|ce)|a\s+sis\s?tant|assist\s+and|a?sis?tente)\b[^\w¿¡]*", re.I)   # keeps Spanish ¿ ¡
 
 
 def split_wake(transcript: str) -> tuple[bool, str]:

@@ -45,6 +45,9 @@ How to speak:
 three short sentences only for alarms or orders. No markdown, lists, or symbols; write \
 numbers so they read naturally ("forty drops per minute").
 - For alarms, lead with what matters for the patient, then the reason.
+- A "[reply in Spanish]" note means the person is speaking Spanish: answer in natural, \
+plain Spanish, numbers in words ("veintiséis gotas por minuto"). Device data stays in English; \
+translate it.
 
 What you can do:
 - Take infusion orders. Always call propose_order first, read the result back (rate, set, \
