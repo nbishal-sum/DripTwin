@@ -35,6 +35,9 @@ How to speak:
 three short sentences only for alarms or orders. No markdown, lists, or symbols; write \
 numbers so they read naturally ("forty drops per minute").
 - For alarms, lead with what matters for the patient, then the reason.
+- A "[reply in Spanish]" note means the person is speaking Spanish: answer in natural, \
+plain Spanish, numbers in words ("veintiséis gotas por minuto"). Device data stays in English; \
+translate it.
 
 What you can do:
 - Take infusion orders. Always call propose_order first, read the result back (rate, set, \
@@ -223,14 +226,15 @@ class Agent:
             return ""
         return "[device events: " + " | ".join(f"{e.kind}: {e.message}" for e in warn[-3:]) + "]\n"
 
-    def _turn_context(self) -> str:
+    def _turn_context(self, lang: str = "en") -> str:
         # Live status rides along with the question, so most answers need no
         # get_status round trip: one model call instead of two.
-        return self._device_context() + f"[live status: {self._status(self.clock())}]\n"
+        return (self._device_context() + f"[live status: {self._status(self.clock())}]\n"
+                + ("[reply in Spanish]\n" if lang == "es" else ""))
 
-    def ask(self, text: str) -> str:
+    def ask(self, text: str, lang: str = "en") -> str:
         with self.lock:
-            ctx = self._turn_context()
+            ctx = self._turn_context(lang)
         start = len(self.messages)
         self.messages.append({"role": "user", "content": ctx + text})
         try:
@@ -283,9 +287,9 @@ class GeminiAgent(Agent):
         key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
         return httpx.Client(headers={"Authorization": f"Bearer {key}"}, timeout=30)
 
-    def ask(self, text: str) -> str:
+    def ask(self, text: str, lang: str = "en") -> str:
         with self.lock:
-            ctx = self._turn_context()
+            ctx = self._turn_context(lang)
         start = len(self.messages)
         self.messages.append({"role": "user", "content": ctx + text})
         try:

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -114,36 +114,37 @@ def frame():
 
 class Say(BaseModel):
     text: str
-    speak: bool = True
+    lang: str = "en"
 
 
-async def _reply(text: str, speak: bool) -> dict:
+def _lang(lang: str) -> str:
+    return lang if lang in voice.LANGUAGES else "en"
+
+
+async def _reply(text: str, lang: str) -> dict:
+    """Agent reply plus how long it took. Speech is fetched separately from
+    /api/speak, so the browser can start playing it while it streams."""
+    t = time.perf_counter()
     if agent is None:
         reply = offline_explain(rt.twin)
     else:
         try:
-            reply = await asyncio.to_thread(agent.ask, text)
+            reply = await asyncio.to_thread(agent.ask, text, lang)
         except Exception as e:      # network / API failure must not break the device
             reply = "I can't reach the assistant right now. " + offline_explain(rt.twin)
             print("[agent]", repr(e))
-    out = {"reply": reply}
-    if speak and voice.available():
-        try:
-            out["audio_b64"] = base64.b64encode(await voice.speak(reply)).decode()
-        except Exception as e:
-            print("[tts]", repr(e))
-    return out
+    return {"reply": reply, "agent_ms": round((time.perf_counter() - t) * 1000)}
 
 
 @app.post("/api/ask")
 async def ask(body: Say):
-    return await _reply(body.text, body.speak)
+    return await _reply(body.text, _lang(body.lang))
 
 
-# "assistant", "hey assistant", "Cartesia AI assistant"... at the start of an utterance.
-# The leading "a" is optional because the browser can clip the first syllable.
-WAKE = re.compile(r"^\W*(?:(?:hey|hi|ok|okay)\W+)?(?:cartesia\W+)?(?:a\.?\s?i\.?\W+)?"
-                  r"(?:a?ss?ist[ae]n(?:t|ts|ce)|a\s+sis\s?tant|assist\s+and)\b\W*", re.I)
+# "assistant", "hey assistant", "Cartesia AI assistant", "oye asistente"... at the start of an
+# utterance. The leading "a" is optional because the browser can clip the first syllable.
+WAKE = re.compile(r"^\W*(?:(?:hey|hi|ok|okay|oye|hola)\W+)?(?:cartesia\W+)?(?:a\.?\s?i\.?\W+)?"
+                  r"(?:a?ss?ist[ae]n(?:t|ts|ce)|a\s+sis\s?tant|assist\s+and|a?sis?tente)\b[^\w¿¡]*", re.I)   # keeps Spanish ¿ ¡
 
 
 def split_wake(transcript: str) -> tuple[bool, str]:
@@ -153,16 +154,19 @@ def split_wake(transcript: str) -> tuple[bool, str]:
 
 
 @app.post("/api/voice")
-async def voice_in(audio: UploadFile, wake: bool = Form(False)):
+async def voice_in(audio: UploadFile, wake: bool = Form(False), lang: str = Form("en")):
     """Push-to-talk sends wake=false. Hands-free mode sends wake=true for every
     utterance it hears, and only ones starting with the wake word reach the agent."""
     if not voice.available():
         return JSONResponse({"error": "CARTESIA_API_KEY not set"}, 400)
+    lang = _lang(lang)
+    t = time.perf_counter()
     try:
-        transcript = await voice.transcribe(await audio.read(), audio.filename or "speech.webm")
+        transcript = await voice.transcribe(await audio.read(), audio.filename or "speech.webm", lang)
     except Exception as e:
         print(f"[voice] speech-to-text failed: {e!r}")
         return JSONResponse({"error": f"speech-to-text failed: {e}"}, 502)
+    stt_ms = round((time.perf_counter() - t) * 1000)
     if not transcript:
         print("[voice] heard nothing")
         return {"transcript": "", "reply": ""}
@@ -175,18 +179,68 @@ async def voice_in(audio: UploadFile, wake: bool = Form(False)):
             print(f"[voice] heard {transcript!r}: wake word, waiting for the question")
             return {"transcript": transcript, "wake": True, "reply": ""}
         transcript = question
-    print(f"[voice] heard {transcript!r}: asking the agent")
-    out = await _reply(transcript, True)
-    print(f"[voice] reply {out['reply']!r}" + ("" if "audio_b64" in out else " (no audio!)"))
-    return {"transcript": transcript, **out}
+    print(f"[voice] heard {transcript!r} ({lang}, {stt_ms} ms): asking the agent")
+    out = await _reply(transcript, lang)
+    print(f"[voice] reply {out['reply']!r} ({out['agent_ms']} ms)")
+    return {"transcript": transcript, "stt_ms": stt_ms, **out}
+
+
+async def _stream(text: str, lang: str, urgent: bool = False):
+    """Raw PCM straight from Cartesia. The first chunk is awaited here so a
+    failure is a clean 502 the browser can fall back from, not a cut-off stream."""
+    if not voice.available():
+        return JSONResponse({"error": "CARTESIA_API_KEY not set"}, 400)
+    chunks = voice.speak_stream(text, lang, urgent)
+    try:
+        first = await anext(chunks)
+    except Exception as e:
+        print("[tts]", repr(e))
+        return JSONResponse({"error": f"text-to-speech failed: {e}"}, 502)
+
+    async def body():
+        yield first
+        try:
+            async for c in chunks:
+                yield c
+        except Exception as e:
+            print("[tts] stream cut off:", repr(e))
+    return StreamingResponse(body(), media_type="application/octet-stream",
+                             headers={"X-Sample-Rate": str(voice.SAMPLE_RATE),
+                                      "Cache-Control": "no-store"})
+
+
+@app.post("/api/speak")
+async def speak(body: Say):
+    return await _stream(body.text, _lang(body.lang))
+
+
+# The only speech nobody asked for: real alarms, spoken the moment they fire. Short, says what
+# to do, never waits on the LLM. Warnings and notices stay on screen; "Assistant, what
+# happened?" gets the details.
+ANNOUNCE = {
+    "occlusion": ("Alarm. No flow. The line may be kinked or clamped. Check the tubing and the IV site.",
+                  "Alarma. No hay flujo. La vía puede estar doblada o pinzada. Revise el tubo y el sitio de la vía."),
+    "free_flow": ("Alarm. Free flow. The valve is closed. Check the tubing is seated in the clamp.",
+                  "Alarma. Flujo libre. La válvula está cerrada. Revise que el tubo esté bien puesto en la pinza."),
+    "empty_bag": ("Alarm. The bag looks empty. The valve is closed. Replace the bag.",
+                  "Alarma. La bolsa parece vacía. La válvula está cerrada. Cambie la bolsa."),
+    "fw_host_lost": ("Alarm. The clamp controller lost contact and is holding its position. Check the line by hand.",
+                     "Alarma. El controlador de la pinza perdió la conexión y mantiene su posición. Revise la vía a mano."),
+}
+
+
+class Announce(BaseModel):
+    kind: str
+    lang: str = "en"
 
 
 @app.post("/api/announce")
-async def announce(body: Say):
-    """Speak a device event verbatim (alarms must not wait on the LLM)."""
-    if not voice.available():
-        return {}
-    return {"audio_b64": base64.b64encode(await voice.speak(body.text)).decode()}
+async def announce(body: Announce):
+    phrases = ANNOUNCE.get(body.kind)
+    if phrases is None:
+        return Response(status_code=204)     # not an alarm: stays silent
+    lang = _lang(body.lang)
+    return await _stream(phrases[lang == "es"], lang, urgent=True)
 
 
 class OrderIn(BaseModel):

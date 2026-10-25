@@ -2,14 +2,17 @@
 
     python -m driptwin.selfcheck
 
-Checks: which keys .env provides, Cartesia text-to-speech and speech-to-text,
+Checks: which keys .env provides, Cartesia streamed text-to-speech and speech-to-text
+(English and Spanish),
 and one real question to the agent (Claude, or Gemini if that's the only key)
 against a simulated drip running at 40 drops per minute.
 """
 
 import asyncio
+import io
 import os
 import time
+import wave
 
 from . import voice
 from .agent import Agent, GeminiAgent
@@ -19,16 +22,28 @@ from .twin import DripTwin, Order
 KEYS = ("ANTHROPIC_API_KEY", "CARTESIA_API_KEY", "GEMINI_API_KEY")
 
 
+def _wav(pcm: bytes) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(voice.SAMPLE_RATE)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
 def check_voice() -> bool:
-    async def run() -> None:
+    async def run(lang: str, text: str) -> None:
+        t, first, pcm = time.perf_counter(), None, b""
+        async for chunk in voice.speak_stream(text, lang):
+            first = first or time.perf_counter() - t
+            pcm += chunk
+        print(f"  text-to-speech {lang} OK  first audio in {first * 1000:.0f} ms, "
+              f"{len(pcm) / 2 / voice.SAMPLE_RATE:.1f} s of speech")
         t = time.perf_counter()
-        mp3 = await voice.speak("Running at forty drops per minute.")
-        print(f"  text-to-speech   OK  {len(mp3) // 1024} KB in {time.perf_counter() - t:.1f} s")
-        t = time.perf_counter()
-        text = await voice.transcribe(mp3, "check.mp3")
-        print(f"  speech-to-text   OK  heard {text!r} in {time.perf_counter() - t:.1f} s")
+        heard = await voice.transcribe(_wav(pcm), "check.wav", lang)
+        print(f"  speech-to-text {lang} OK  heard {heard!r} in {time.perf_counter() - t:.1f} s")
     try:
-        asyncio.run(run())
+        asyncio.run(run("en", "Running at forty drops per minute."))
+        asyncio.run(run("es", "Goteando a cuarenta gotas por minuto."))
         return True
     except Exception as e:
         print(f"  Cartesia FAILED: {e!r}"[:300])

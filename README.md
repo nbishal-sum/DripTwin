@@ -17,8 +17,11 @@ Built at **Cal Hacks 13.0** (October 2026).
   from the drop rate to estimate the bag height. It can tell a lowered bag apart from a kinked line
   or an empty bag.
 - **Corrects the flow.** A servo pinch valve adjusts the tubing to hold the ordered rate.
-- **Talks to the nurse.** Say *"Assistant, how many drops so far?"* and it answers out loud.
-  Orders are read back and need a spoken confirmation before anything starts.
+- **Talks to the nurse, in English or Spanish.** Say *"Assistant, how many drops so far?"* (or
+  *"Asistente, ¿cuántas gotas van?"*) and it answers out loud. Orders are read back and need a
+  spoken confirmation before anything starts.
+- **Speaks up when something is wrong.** A kinked line, an empty bag or free flow is announced
+  out loud the moment it's detected, so a nurse across the room hears it.
 - **Stays safe without the AI.** Hard limits live in the microcontroller firmware. The AI has no
   valve control at all, and the valve holds its position if the laptop disconnects.
 
@@ -27,7 +30,7 @@ Built at **Cal Hacks 13.0** (October 2026).
 | | |
 |---|---|
 | **AI agent** | [Claude](https://www.anthropic.com) (Anthropic API, tool use), with Gemini as a fallback |
-| **Voice** | [Cartesia](https://cartesia.ai): the nurse gives commands and asks questions by voice (Ink-Whisper speech-to-text), and DripTwin answers out loud (Sonic text-to-speech) |
+| **Voice** | [Cartesia](https://cartesia.ai): the nurse gives commands and asks questions by voice (Ink-Whisper speech-to-text), and DripTwin answers and announces alarms out loud (Sonic text-to-speech, streamed so speech starts in about 0.3 s). English and Spanish |
 | **Data** | [Tiger Data](https://www.tigerdata.com) / TimescaleDB hypertables (SQLite when offline) |
 | **Vision** | Python, OpenCV, NumPy |
 | **Backend** | FastAPI, WebSockets, uvicorn |

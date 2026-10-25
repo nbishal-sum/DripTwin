@@ -75,8 +75,9 @@
         <svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><rect x="4" y="1" width="8" height="12" rx="4" fill="currentColor"/><path d="M1.5 9.5a6.5 6.5 0 0 0 13 0M8 16v3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         <span id="pttLabel">Hold to talk</span>
       </button>
-      <p class="hint">or hold the space bar</p>
-      <label class="check"><input type="checkbox" id="handsFree" checked> Listen for “Assistant”</label>
+      <p class="hint">or hold the space bar. Or just say “Assistant”</p>
+      <label class="check">Language
+        <select id="lang"><option value="en">English</option><option value="es">Español</option></select></label>
       <div id="hfState" class="muted"><span class="meter" id="hfMeter" hidden><i></i></span><span id="hfText"></span></div>
       <div id="chat"></div>
       <form class="row" id="askForm">
@@ -121,6 +122,10 @@
 const $ = (id) => document.getElementById(id);
 const hist = [];
 let hello = {}, alarmText = "";
+// English or Spanish: sets what Cartesia listens for, what Claude answers in and how it's spoken.
+const lang = () => $("lang").value;
+try { $("lang").value = localStorage.getItem("lang") || "en"; } catch (e) {}
+$("lang").onchange = () => { try { localStorage.setItem("lang", lang()); } catch (e) {} };
 
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
@@ -146,7 +151,7 @@ function connect() {
       $("simPanel").style.display = msg.sim ? "" : "none";
       document.querySelectorAll(".simonly").forEach(el => el.style.display = msg.sim ? "" : "none");
       if (msg.monitor) setupMonitor();
-      if ($("handsFree").checked && !hf.on) handsFreeStart();      // hands-free from page load
+      handsFreeStart();                        // always listening for "Assistant", from page load
     } else if (msg.type === "state") {
       render(msg.state);
       msg.events.forEach(addEvent);
@@ -275,7 +280,9 @@ function addEvent(e) {
   if (e.severity === "alarm") {
     $("banner").textContent = e.message; $("banner").style.display = "block";
   }
-  // Events are shown, never spoken: the assistant only talks when asked.
+  // The only speech nobody asked for: real alarms (blocked line, free flow, empty bag, lost
+  // controller). Everything else is shown, never spoken.
+  if (e.severity === "alarm") speakStream("/api/announce", { kind: e.kind, lang: lang() });
 }
 
 // ---- audio ----
@@ -292,23 +299,44 @@ function unlockAudio() {
   if (hf.ctx && hf.ctx.state === "suspended") hf.ctx.resume().catch(() => {});
 }
 addEventListener("pointerdown", unlockAudio); addEventListener("keydown", unlockAudio);
-function play(b64) {
+// Cartesia speech arrives as a stream of raw 16-bit PCM. Each piece is scheduled the moment it
+// lands, so playback starts ~0.2 s after the request instead of after the whole reply.
+// onFirst(ms) reports how long the first sound took. Falls back to the browser's own voice.
+function speakStream(url, body, onFirst) {
   queueAudio(async (res) => {
     try {
       unlockAudio();
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const src = actx.createBufferSource();
-      src.buffer = await actx.decodeAudioData(bytes.buffer);
-      src.connect(actx.destination); src.onended = res; src.start();
+      const t0 = performance.now();
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify(body) });
+      if (r.status === 204) return res();
+      if (!r.ok) throw new Error("speech " + r.status);
+      if (actx.state === "suspended") hf.last = "\nTap the page once to turn on sound.";
+      const rate = +r.headers.get("X-Sample-Rate") || 24000, reader = r.body.getReader();
+      let at = 0, carry = null;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        let bytes = value;
+        if (carry) { bytes = new Uint8Array(carry.length + value.length); bytes.set(carry); bytes.set(value, carry.length); }
+        const n = bytes.length >> 1;                 // a chunk can split a sample: keep the odd byte
+        carry = bytes.length & 1 ? bytes.slice(-1) : null;
+        if (!n) continue;
+        const pcm = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+        const buf = actx.createBuffer(1, n, rate), ch = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) ch[i] = pcm.getInt16(i * 2, true) / 32768;
+        const src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination);
+        if (!at && onFirst) onFirst(performance.now() - t0);
+        at = Math.max(at, actx.currentTime + 0.03);
+        src.start(at); at += buf.duration;
+      }
+      setTimeout(res, Math.max(0, (at - actx.currentTime) * 1000));
     } catch (e) {
-      const a = new Audio("data:audio/mpeg;base64," + b64); a.onended = res; a.onerror = res;
-      a.play().catch(() => { hf.last = "\nTap the page once to turn on sound."; res(); });
+      console.warn(e);
+      if (!body.text) return res();
+      const u = new SpeechSynthesisUtterance(body.text);
+      u.lang = body.lang === "es" ? "es-MX" : "en-US"; u.onend = res; u.onerror = res; speechSynthesis.speak(u);
     }
-  });
-}
-function speakLocal(text) {
-  queueAudio((res) => {
-    const u = new SpeechSynthesisUtterance(text); u.onend = res; u.onerror = res; speechSynthesis.speak(u);
   });
 }
 
@@ -323,10 +351,19 @@ function chat(who, text) {
   $("chat").append(d); $("chat").scrollTop = 1e9; return d;
 }
 
-async function handleReply(r) {
+// Under each reply: how long each stage took, so the speed is visible. Only spoken questions
+// ("Assistant, …" or the talk button) get a spoken answer; typed ones are answered on screen.
+async function handleReply(r, speak = true) {
   if (r.error) { console.warn(r.error); return chat("bot", "Sorry, that didn't work. Please try again."); }
-  if (r.reply) chat("bot", r.reply);
-  if (r.audio_b64) play(r.audio_b64); else if (r.reply) speakLocal(r.reply);
+  if (!r.reply) return;
+  const d = chat("bot", r.reply), lat = document.createElement("small");
+  lat.className = "lat"; d.append(lat);
+  const sec = (ms) => (ms / 1000).toFixed(ms < 1000 ? 2 : 1) + " s";
+  const parts = [r.stt_ms != null && "heard in " + sec(r.stt_ms), "answered in " + sec(r.agent_ms)].filter(Boolean);
+  lat.textContent = parts.join(" · ");
+  if (!speak) return;
+  speakStream("/api/speak", { text: r.reply, lang: lang() },
+              (ms) => { lat.textContent = [...parts, "voice in " + sec(ms)].join(" · "); });
 }
 
 $("askForm").onsubmit = async (ev) => {
@@ -334,10 +371,11 @@ $("askForm").onsubmit = async (ev) => {
   const text = $("askText").value.trim(); if (!text) return;
   $("askText").value = ""; chat("you", text);
   const thinking = chat("bot", "…");
-  const r = await post("/api/ask", { text, speak: true }); thinking.remove(); handleReply(r);
+  const r = await post("/api/ask", { text, lang: lang() }); thinking.remove(); handleReply(r, false);
 };
 
-// push-to-talk: MediaRecorder -> /api/voice (Cartesia STT -> Claude -> Cartesia TTS)
+// push-to-talk: MediaRecorder -> /api/voice (Cartesia STT -> Claude -> Cartesia TTS).
+// Holding the button is itself the call, so no wake word is needed here.
 let rec, chunks = [];
 // Safari records mp4, Chrome/Firefox webm: name the file after what was actually recorded.
 const audioName = (type) => "speech." + (type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm");
@@ -350,6 +388,7 @@ async function startRec() {
   rec.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
     const fd = new FormData(); fd.append("audio", new Blob(chunks, { type: rec.mimeType }), audioName(rec.mimeType));
+    fd.append("lang", lang());
     const thinking = chat("bot", "…");
     const r = await (await fetch("/api/voice", { method: "POST", body: fd })).json();
     thinking.remove();
@@ -363,29 +402,40 @@ function stopRec() {
   $("ptt").classList.remove("rec"); $("pttLabel").textContent = "Hold to talk";
 }
 $("ptt").onpointerdown = startRec; $("ptt").onpointerup = stopRec; $("ptt").onpointerleave = stopRec;
+addEventListener("keydown", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); startRec(); } });
+addEventListener("keyup", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT") stopRec(); });
 
-// hands-free: a volume-based speech detector cuts the mic into utterances; each one goes to
-// /api/voice with wake=true, and the server only passes ones starting with "assistant" to the
-// agent. Saying just "assistant" arms the next utterance (10 s) as the question.
+// Hands-free is always on (no off switch), alongside the talk button. A volume-based
+// speech detector cuts the mic into utterances; each one goes to /api/voice with wake=true, and
+// the server only passes ones starting with "assistant" to the agent. Saying just "assistant"
+// arms the next utterance (10 s) as the question. If the mic is blocked or drops out, it keeps
+// retrying on its own.
 const hf = { on: false, armedUntil: 0, inflight: 0, rec: null, last: "", queue: Promise.resolve() };
+const HF_TEXT = {
+  en: { listening: "Listening…", armed: "Go ahead, I'm listening…", thinking: "Thinking…",
+        speaking: "Speaking…", idle: "Say “Assistant” to ask a question" },
+  es: { listening: "Escuchando…", armed: "Adelante, le escucho…", thinking: "Pensando…",
+        speaking: "Hablando…", idle: "Diga “Asistente” para preguntar" },
+};
 function hfShow(text, level) {
   $("hfText").textContent = text;
   $("hfMeter").hidden = level == null;
   if (level != null) $("hfMeter").firstChild.style.width = Math.min(100, level * 100) + "%";
 }
 async function handsFreeStart() {
-  if (!hello.voice) {
-    $("handsFree").checked = false;
-    hfShow("Voice isn't available. You can type your question below."); return;
-  }
+  if (hf.on) return;
+  if (!hello.voice) { hfShow("Voice isn't available. You can type your question below."); return; }
   hf.on = true;                    // set first: a WebSocket reconnect must not start a second one
   try {
     hf.stream = await navigator.mediaDevices.getUserMedia(
       { audio: { echoCancellation: true, noiseSuppression: true } });
   } catch (e) {
-    hf.on = false; $("handsFree").checked = false;
-    hfShow("The microphone is blocked. Allow it in the browser, then tick the box again."); return;
+    hf.on = false;
+    hfShow("The microphone is blocked. Allow it for this page and listening starts on its own.");
+    setTimeout(handsFreeStart, 3000); return;
   }
+  // mic unplugged or taken away: start over
+  hf.stream.getAudioTracks().forEach(t => t.onended = () => { handsFreeStop(); setTimeout(handsFreeStart, 1000); });
   hf.ctx = new AudioContext();     // starts suspended on page load until the first click (browser rule)
   hf.an = hf.ctx.createAnalyser(); hf.an.fftSize = 1024;
   hf.ctx.createMediaStreamSource(hf.stream).connect(hf.an);
@@ -403,6 +453,7 @@ function handsFreeStop() {
 }
 function hfTick() {
   if (hf.ctx.state === "suspended") {
+    hf.ctx.resume().catch(() => {});           // allowed by some browsers once the mic is live
     hfShow("Tap anywhere on the page to start listening."); return;
   }
   hf.an.getFloatTimeDomainData(hf.buf);
@@ -411,8 +462,9 @@ function hfTick() {
   const threshold = Math.max(hf.floor * 3, 0.015);
   const talking = audioBusy > 0 || speechSynthesis.speaking;      // don't listen to ourselves
   const recording = hf.rec && hf.rec.state === "recording";
-  const state = recording ? "Listening…" : now < hf.armedUntil ? "Go ahead, I'm listening…"
-    : hf.inflight ? "Thinking…" : talking ? "Speaking…" : "Say “Assistant” to ask a question";
+  const T = HF_TEXT[lang()];
+  const state = recording ? T.listening : now < hf.armedUntil ? T.armed
+    : hf.inflight ? T.thinking : talking ? T.speaking : T.idle;
   hfShow(state + hf.last, rms / threshold / 3);                   // meter full at 3x the trigger level
   if (recording) {
     if (talking) { hf.rec.discard = true; hf.rec.stop(); return; }
@@ -420,7 +472,7 @@ function hfTick() {
     if (now - hf.tLoud > 900 || now - hf.t0 > 12000) {          // 0.9 s of silence ends it
       hf.rec.short = hf.tLoud - hf.t0 < 350; hf.rec.stop();
     }
-  } else if (!talking && !(rec && rec.state === "recording")) {
+  } else if (!talking && !(rec && rec.state === "recording")) {   // the talk button has the mic
     if (rms > threshold) { hfRecord(); hf.t0 = hf.tLoud = now; }
     else hf.floor = hf.floor * 0.98 + rms * 0.02;              // learn the room's noise level
   }
@@ -441,6 +493,7 @@ async function hfSend(blob) {
   const armed = performance.now() < hf.armedUntil;
   const fd = new FormData();
   fd.append("audio", blob, audioName(blob.type)); fd.append("wake", armed ? "false" : "true");
+  fd.append("lang", lang());
   hf.inflight++;
   try {
     const r = await (await fetch("/api/voice", { method: "POST", body: fd })).json();
@@ -467,9 +520,6 @@ function chime() {
     });
   } catch (e) {}
 }
-$("handsFree").onchange = (e) => e.target.checked ? handsFreeStart() : handsFreeStop();
-addEventListener("keydown", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); startRec(); } });
-addEventListener("keyup", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT") stopRec(); });
 
 document.querySelectorAll("[data-sim]").forEach(b => b.onclick = () => post("/api/sim/" + b.dataset.sim));
 $("orderForm").onsubmit = async (ev) => {
