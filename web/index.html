@@ -116,7 +116,7 @@
     </section>
   </div>
 </main>
-<footer id="credits"></footer>
+<footer id="credits">Built at Cal Hacks 13.0</footer>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -144,9 +144,6 @@ function connect() {
     const msg = JSON.parse(m.data);
     if (msg.type === "hello") {
       hello = msg;
-      const parts = [msg.agent && `${msg.agent_name || "Claude"}`, msg.voice && "Cartesia voice",
-                     msg.store === "timescale" && "Tiger Data"].filter(Boolean);
-      $("credits").textContent = parts.length ? "Powered by " + parts.join(" · ") : "";
       $("simPanel").style.display = msg.sim ? "" : "none";
       document.querySelectorAll(".simonly").forEach(el => el.style.display = msg.sim ? "" : "none");
       if (msg.monitor) setupMonitor();
