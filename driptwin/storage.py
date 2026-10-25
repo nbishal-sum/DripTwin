@@ -29,9 +29,10 @@ SCHEMA_SQLITE = [
 
 
 class Store:
-    def __init__(self, url: str | None = None):
+    def __init__(self, url: str | None = None, prefix: str = "inf"):
         self.url = url or os.environ.get("DATABASE_URL")
-        self.infusion_id = time.strftime("inf-%Y%m%d-%H%M%S")
+        # "sim-..." for simulator runs, so practice data is never mistaken for a real infusion
+        self.infusion_id = time.strftime(f"{prefix}-%Y%m%d-%H%M%S")
         if self.url:
             import psycopg
             self.conn = psycopg.connect(self.url, autocommit=True)

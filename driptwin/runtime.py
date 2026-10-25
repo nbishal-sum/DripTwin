@@ -155,7 +155,7 @@ class Runtime:
             self.device = PicoDevice(self._on_drop, port, camera)
         self.sim = sim
         self.monitor = monitor
-        self.store = Store()
+        self.store = Store(prefix="sim" if sim else "inf")
         self.subscribers: set[asyncio.Queue] = set()
         self._events_sent = 0
         self._fw_alarms_seen = 0
