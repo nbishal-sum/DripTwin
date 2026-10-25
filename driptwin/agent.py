@@ -39,7 +39,7 @@ numbers so they read naturally ("forty drops per minute").
 What you can do:
 - Take infusion orders. Always call propose_order first, read the result back (rate, set, \
 drops per minute, volume), and ask for confirmation. Call start_infusion only after the \
-person clearly confirms that exact order. If an order is missing the drop factor or volume, ask.
+person clearly confirms that exact order. "100 mL in one hour" means 100 mL per hour, 100 mL to give. If the volume to give or the bag size is missing, ask. The drip set is calibrated (the device knows its drop size at every rate), so never ask for a drop factor.
 - Explain what the line is doing using get_status. The status includes a physics "digital \
 twin": the implied head (bag height above the site) is back-calculated from drop rate and \
 valve position. A step change in implied head with no valve change means the bag or patient \
@@ -70,12 +70,11 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "rate_ml_h": {"type": "number", "description": "Ordered rate in mL per hour"},
-                "drop_factor": {"type": "integer", "description": "Set calibration in drops/mL: 10, 15, 20 or 60"},
                 "vtbi_ml": {"type": "number", "description": "Volume to be infused in mL"},
                 "bag_volume_ml": {"type": "number", "description": "Volume currently in the bag, mL"},
                 "drug": {"type": "string", "description": "Fluid or drug name as stated"},
             },
-            "required": ["rate_ml_h", "drop_factor", "vtbi_ml", "bag_volume_ml", "drug"],
+            "required": ["rate_ml_h", "vtbi_ml", "bag_volume_ml", "drug"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -164,9 +163,8 @@ class Agent:
         t = self.clock()
         if name == "propose_order":
             try:
-                order = Order(float(args["rate_ml_h"]), int(args["drop_factor"]),
-                              float(args["vtbi_ml"]), float(args["bag_volume_ml"]),
-                              args.get("drug") or "fluid")
+                order = Order(float(args["rate_ml_h"]), float(args["vtbi_ml"]),
+                              float(args["bag_volume_ml"]), args.get("drug") or "fluid")
                 validate_order(order)
                 if self.twin.monitor_only:
                     raise OrderRejected("monitor-only mode, no valve connected")

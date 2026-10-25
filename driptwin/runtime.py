@@ -45,7 +45,7 @@ class SimDevice:
 
     def step(self, t: float, dt: float) -> None:
         drops = self.plant.step(t, dt)
-        growth = min(1.0, self.plant._accum * self.plant.drop_factor)
+        growth = min(1.0, self.plant._accum / self.plant.drop_vol)
         frame = self.chamber.frame(growth, bool(drops))
         if self.detector.process(frame, t):
             self.on_drop(t)

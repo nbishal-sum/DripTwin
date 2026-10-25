@@ -37,7 +37,7 @@ def check_voice() -> bool:
 
 def check_agent() -> bool:
     twin = DripTwin(head_cm=80.0)
-    twin.start(Order(120, 20, 1000, 1000, "saline"), 0.0)
+    twin.start(Order(120, 1000, 1000, "saline"), 0.0)
     for i in range(1, 40):
         twin.on_drop(i * 1.5)
     twin.tick(60.0)

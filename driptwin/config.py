@@ -10,7 +10,6 @@ class SafetyLimits:
     # Order limits (what the agent / UI may request)
     min_rate_ml_h: float = 5.0
     max_rate_ml_h: float = 500.0
-    allowed_drop_factors: tuple = (10, 15, 20, 60)
     max_volume_ml: float = 3000.0
 
     # Valve: u = 0 fully open, 1 fully closed (pinched)

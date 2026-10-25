@@ -191,7 +191,6 @@ async def announce(body: Say):
 
 class OrderIn(BaseModel):
     rate_ml_h: float
-    drop_factor: int
     vtbi_ml: float
     bag_volume_ml: float
     drug: str = "fluid"

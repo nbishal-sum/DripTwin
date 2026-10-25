@@ -17,7 +17,7 @@ from enum import Enum
 import math
 
 from .config import CONFIG, Config
-from .physics import (HeadEstimator, ml_h_to_gtt_min, valve_for_flow,
+from .physics import (HeadEstimator, gtt_min_to_ml_h, ml_h_to_gtt_min, valve_for_flow,
                       max_flow_ml_min)
 from .rate import DropLog, RateEstimator, RateEstimate
 
@@ -40,14 +40,13 @@ ALARMS = {Mode.ALARM_OCCLUSION, Mode.ALARM_EMPTY, Mode.ALARM_FREE_FLOW}
 @dataclass
 class Order:
     rate_ml_h: float
-    drop_factor: int
     vtbi_ml: float          # volume to be infused
     bag_volume_ml: float
     drug: str = "fluid"
 
     @property
     def target_gtt_min(self) -> float:
-        return ml_h_to_gtt_min(self.rate_ml_h, self.drop_factor)
+        return ml_h_to_gtt_min(self.rate_ml_h)
 
     @property
     def target_ml_min(self) -> float:
@@ -72,9 +71,6 @@ def validate_order(order: Order, cfg: Config = CONFIG) -> None:
     if not (s.min_rate_ml_h <= order.rate_ml_h <= s.max_rate_ml_h):
         raise OrderRejected(
             f"rate {order.rate_ml_h} mL/h outside {s.min_rate_ml_h}-{s.max_rate_ml_h} mL/h")
-    if order.drop_factor not in s.allowed_drop_factors:
-        raise OrderRejected(
-            f"drop factor {order.drop_factor} not in {s.allowed_drop_factors} gtt/mL")
     if not (0 < order.vtbi_ml <= min(order.bag_volume_ml, s.max_volume_ml)):
         raise OrderRejected(
             f"VTBI {order.vtbi_ml} mL must be >0 and <= bag volume {order.bag_volume_ml} mL")
@@ -119,8 +115,7 @@ class DripTwin:
         # Feed-forward from the model: start where physics says we should be.
         self._move(valve_for_flow(self.head0, order.target_ml_min, self.cfg.physics), t)
         self._emit(t, "order_started", "info",
-                   f"Started {order.rate_ml_h:g} mL/h with a {order.drop_factor} gtt/mL set "
-                   f"= {order.target_gtt_min:.1f} drops/min, VTBI {order.vtbi_ml:g} mL.",
+                   f"Started {order.rate_ml_h:g} mL/h = {order.target_gtt_min:.1f} drops/min, VTBI {order.vtbi_ml:g} mL.",
                    asdict(order))
 
     def pause(self, t: float) -> None:
@@ -161,7 +156,7 @@ class DripTwin:
         if o is None or self.mode in (Mode.IDLE, Mode.PAUSED, Mode.COMPLETE):
             return self.u
 
-        q = self.rate.gtt_min / o.drop_factor           # mL/min
+        q = gtt_min_to_ml_h(self.rate.gtt_min) / 60.0  # mL/min, from the drip set's Q(f) curve
         s = self.est.update(q, self.u, dt, self.rate.confident)
         self._record(t, q)
 
@@ -344,7 +339,7 @@ class DripTwin:
             "order": asdict(o) if o else None,
             "target_gtt_min": o.target_gtt_min if o else None,
             "rate_gtt_min": round(self.rate.gtt_min, 2),
-            "rate_ml_h": round(self.rate.gtt_min * 60 / o.drop_factor, 1) if o else None,
+            "rate_ml_h": round(gtt_min_to_ml_h(self.rate.gtt_min), 1) if o else None,
             "rate_confident": self.rate.confident,
             "last_drop_age_s": None if math.isinf(self.rate.last_drop_age_s)
                                else round(self.rate.last_drop_age_s, 1),

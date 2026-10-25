@@ -16,12 +16,30 @@ import math
 from .config import PhysicsParams, CONFIG
 
 
-def ml_h_to_gtt_min(rate_ml_h: float, drop_factor: int) -> float:
-    return rate_ml_h * drop_factor / 60.0
+def drop_flow_ml_s(f: float) -> float:
+    """Measured on our drip set: flow Q (mL/s) at drop frequency f (drops/s).
+    ~63 uL per drop when slow; drops grow when they come fast (~78 uL at 3/s),
+    so there is no fixed drops-per-mL."""
+    return 0.06341 * f + 0.02416 * f**5 / (f**4 + 2.688**4)
 
 
-def gtt_min_to_ml_h(gtt_min: float, drop_factor: int) -> float:
-    return gtt_min * 60.0 / drop_factor
+def drop_freq_for_flow(q_ml_s: float) -> float:
+    """Inverse of drop_flow_ml_s (monotonic, so bisection)."""
+    if q_ml_s <= 0:
+        return 0.0
+    lo, hi = 0.0, 50.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if drop_flow_ml_s(mid) < q_ml_s else (lo, mid)
+    return (lo + hi) / 2
+
+
+def ml_h_to_gtt_min(rate_ml_h: float) -> float:
+    return drop_freq_for_flow(rate_ml_h / 3600.0) * 60.0
+
+
+def gtt_min_to_ml_h(gtt_min: float) -> float:
+    return drop_flow_ml_s(gtt_min / 60.0) * 3600.0
 
 
 def clamp_resistance(u: float, p: PhysicsParams = CONFIG.physics) -> float:

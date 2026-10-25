@@ -12,14 +12,13 @@ import random
 import numpy as np
 
 from .config import CONFIG, Config
-from .physics import flow_ml_min
+from .physics import drop_flow_ml_s, drop_freq_for_flow, flow_ml_min
 
 
 class SimPlant:
-    def __init__(self, drop_factor: int = 20, head_cm: float = 80.0,
+    def __init__(self, head_cm: float = 80.0,
                  bag_volume_ml: float = 1000.0, cfg: Config = CONFIG, seed: int = 1):
         self.cfg = cfg
-        self.drop_factor = drop_factor
         self.mount_head_cm = head_cm      # bag hook height above the site
         self.bag_ml = bag_volume_ml
         self.bag_volume0 = bag_volume_ml
@@ -27,6 +26,7 @@ class SimPlant:
         self.u = 1.0                      # actual valve position (after slew)
         self.u_cmd = 1.0
         self._accum = 0.0
+        self.drop_vol = drop_flow_ml_s(1e-3) / 1e-3   # mL per drop, set by the flow
         self._rng = random.Random(seed)
         self.creep_per_min = 0.0          # clamp relaxation, valve units / minute
 
@@ -58,9 +58,10 @@ class SimPlant:
         self.bag_ml -= dv
         self._accum += dv
         drops = []
-        drop_vol = 1.0 / self.drop_factor
-        while self._accum >= drop_vol:
-            self._accum -= drop_vol
+        if q > 0:   # drops are bigger when they come fast: the set's Q(f) curve
+            self.drop_vol = q / 60.0 / drop_freq_for_flow(q / 60.0)
+        while self._accum >= self.drop_vol:
+            self._accum -= self.drop_vol
             # drop detaches at a slightly random point in the step
             drops.append(t - dt * self._rng.random() * 0.5)
         return sorted(drops)

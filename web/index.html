@@ -105,7 +105,6 @@
       <h2>Start an infusion</h2>
       <form class="order" id="orderForm">
         <label>Rate (mL/hour)<input name="rate_ml_h" type="number" value="120" step="any"></label>
-        <label>Drip set (drops/mL)<input name="drop_factor" type="number" value="20"></label>
         <label>Volume to give (mL)<input name="vtbi_ml" type="number" value="1000" step="any"></label>
         <label>Bag size (mL)<input name="bag_volume_ml" type="number" value="1000" step="any"></label>
         <button class="primary">Start infusion</button>
@@ -476,7 +475,7 @@ document.querySelectorAll("[data-sim]").forEach(b => b.onclick = () => post("/ap
 $("orderForm").onsubmit = async (ev) => {
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
-  const body = { rate_ml_h: +f.rate_ml_h, drop_factor: +f.drop_factor, vtbi_ml: +f.vtbi_ml, bag_volume_ml: +f.bag_volume_ml };
+  const body = { rate_ml_h: +f.rate_ml_h, vtbi_ml: +f.vtbi_ml, bag_volume_ml: +f.bag_volume_ml };
   const r = await post("/api/order", body); if (r.error) alert(r.error);
 };
 $("pause").onclick = () => post("/api/pause");

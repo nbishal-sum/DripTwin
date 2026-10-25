@@ -5,7 +5,7 @@ from driptwin.twin import DripTwin, Order
 def run(seconds, disturbances=(), order=None, plant=None, dt=0.1, tick=0.5):
     plant = plant or SimPlant()
     twin = DripTwin(head_cm=80.0)
-    order = order or Order(120, 20, 1000, 1000)
+    order = order or Order(120, 1000, 1000)
     twin.start(order, 0.0)
     plant.command(twin.u)
     log, t, next_tick = [], 0.0, tick
