@@ -27,19 +27,36 @@ Built at **Cal Hacks 13.0** (October 2026).
 | | |
 |---|---|
 | **AI agent** | [Claude](https://www.anthropic.com) (Anthropic API, tool use), with Gemini as a fallback |
-| **Voice** | [Cartesia](https://cartesia.ai): Ink-Whisper speech-to-text and Sonic text-to-speech |
+| **Voice** | [Cartesia](https://cartesia.ai): the nurse gives commands and asks questions by voice (Ink-Whisper speech-to-text), and DripTwin answers out loud (Sonic text-to-speech) |
 | **Data** | [Tiger Data](https://www.tigerdata.com) / TimescaleDB hypertables (SQLite when offline) |
 | **Vision** | Python, OpenCV, NumPy |
 | **Backend** | FastAPI, WebSockets, uvicorn |
 | **Frontend** | Plain HTML, CSS and JavaScript (no build step) |
 | **Hardware** | Raspberry Pi Pico (MicroPython), SG90 servo pinch valve, buzzer, USB webcam |
 
+## Requirements
+
+- Python 3.10 or newer and a USB webcam
+- **Cartesia API key** (`CARTESIA_API_KEY`): the voice of DripTwin. With it, a nurse can run
+  DripTwin completely hands-free: give commands (*"Assistant, start 120 mL per hour"*), ask
+  questions (*"Assistant, how many drops so far?"*), and hear every answer spoken back.
+  Without it, questions can still be typed into the dashboard.
+- **Anthropic API key** (`ANTHROPIC_API_KEY`): the Claude assistant that understands the
+  request and decides what to do. Without it, DripTwin gives short scripted status replies.
+- Optional: `DATABASE_URL` for Tiger Data / TimescaleDB logging (SQLite is used otherwise)
+- Optional hardware: Raspberry Pi Pico, SG90 servo pinch valve, buzzer
+
+Put the keys in a `.env` file in the project folder:
+
+```
+CARTESIA_API_KEY=...
+ANTHROPIC_API_KEY=...
+```
+
 ## Quick start
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-
-# optional keys in a .env file: ANTHROPIC_API_KEY, CARTESIA_API_KEY, DATABASE_URL
 .venv/bin/python -m driptwin.server --sim          # no hardware: simulated drip
 ```
 

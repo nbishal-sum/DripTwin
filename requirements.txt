@@ -1,3 +1,6 @@
+# Python packages. API keys go in .env:
+#   CARTESIA_API_KEY   Cartesia voice: nurse speaks commands, DripTwin answers out loud (called via httpx)
+#   ANTHROPIC_API_KEY  Claude assistant
 opencv-python
 numpy
 fastapi
